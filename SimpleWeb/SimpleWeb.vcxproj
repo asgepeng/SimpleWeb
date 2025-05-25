@@ -19,17 +19,17 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\..\C++ Project\SimpleWeb\SimpleWeb\appconfig.h" />
-    <ClInclude Include="..\..\..\C++ Project\SimpleWeb\SimpleWeb\db.h" />
-    <ClInclude Include="..\..\..\C++ Project\SimpleWeb\SimpleWeb\mvc.h" />
-    <ClInclude Include="..\..\..\C++ Project\SimpleWeb\SimpleWeb\web.h" />
+    <ClInclude Include="appconfig.h" />
+    <ClInclude Include="db.h" />
+    <ClInclude Include="mvc.h" />
+    <ClInclude Include="web.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\..\C++ Project\SimpleWeb\SimpleWeb\appconfig.cpp" />
-    <ClCompile Include="..\..\..\C++ Project\SimpleWeb\SimpleWeb\db.cpp" />
-    <ClCompile Include="..\..\..\C++ Project\SimpleWeb\SimpleWeb\main.cpp" />
-    <ClCompile Include="..\..\..\C++ Project\SimpleWeb\SimpleWeb\mvc.cpp" />
-    <ClCompile Include="..\..\..\C++ Project\SimpleWeb\SimpleWeb\web.cpp" />
+    <ClCompile Include="appconfig.cpp" />
+    <ClCompile Include="db.cpp" />
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="mvc.cpp" />
+    <ClCompile Include="web.cpp" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>17.0</VCProjectVersion>

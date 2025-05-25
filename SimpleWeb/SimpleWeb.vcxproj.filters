@@ -15,33 +15,33 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\..\C++ Project\SimpleWeb\SimpleWeb\appconfig.h">
+    <ClInclude Include="appconfig.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\C++ Project\SimpleWeb\SimpleWeb\db.h">
+    <ClInclude Include="db.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\C++ Project\SimpleWeb\SimpleWeb\mvc.h">
+    <ClInclude Include="mvc.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\C++ Project\SimpleWeb\SimpleWeb\web.h">
+    <ClInclude Include="web.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\..\C++ Project\SimpleWeb\SimpleWeb\appconfig.cpp">
+    <ClCompile Include="appconfig.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\C++ Project\SimpleWeb\SimpleWeb\db.cpp">
+    <ClCompile Include="db.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\C++ Project\SimpleWeb\SimpleWeb\main.cpp">
+    <ClCompile Include="main.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\C++ Project\SimpleWeb\SimpleWeb\mvc.cpp">
+    <ClCompile Include="mvc.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\C++ Project\SimpleWeb\SimpleWeb\web.cpp">
+    <ClCompile Include="web.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

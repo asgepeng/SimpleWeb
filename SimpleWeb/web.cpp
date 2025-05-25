@@ -1,0 +1,391 @@
+#include "web.h"
+#include <sstream>
+#include <algorithm>
+#include <fstream>
+
+#pragma comment(lib, "ws2_32.lib")
+namespace Web
+{
+    bool Web::FileHandler::IsFileRequest(std::string url)
+    {
+        size_t dot = url.find_last_of('.');
+        size_t slash = url.find_last_of('/');
+        return dot != std::string::npos && (slash == std::string::npos || dot > slash);
+    }
+
+    std::string Web::FileHandler::ConvertToPathWindows(const std::string& url)
+    {
+        std::string localPath = "." + url;
+        for (auto& ch : localPath)
+        {
+            if (ch == '/') ch = '\\';
+        }
+        return localPath;
+    }
+
+    std::string Web::FileHandler::GetContentType(const std::string& path)
+    {
+        static const std::unordered_map<std::string, std::string> mimeTypes = {
+            {".html", "text/html"},
+            {".htm", "text/html"},
+            {".css", "text/css"},
+            {".js", "application/javascript"},
+            {".json", "application/json"},
+            {".png", "image/png"},
+            {".jpg", "image/jpeg"},
+            {".jpeg", "image/jpeg"},
+            {".gif", "image/gif"},
+            {".svg", "image/svg+xml"},
+            {".ico", "image/x-icon"},
+            {".txt", "text/plain"},
+            {".xml", "application/xml"},
+            {".pdf", "application/pdf"},
+            {".zip", "application/zip"},
+            {".rar", "application/vnd.rar"},
+            {".mp3", "audio/mpeg"},
+            {".mp4", "video/mp4"},
+            {".webm", "video/webm"},
+            {".woff", "font/woff"},
+            {".woff2", "font/woff2"},
+            {".ttf", "font/ttf"},
+            {".otf", "font/otf"}
+        };
+
+        size_t dot = path.find_last_of('.');
+        if (dot != std::string::npos) {
+            std::string ext = path.substr(dot);
+            auto it = mimeTypes.find(ext);
+            if (it != mimeTypes.end()) {
+                return it->second;
+            }
+        }
+        return "application/octet-stream";
+    }
+    void FileHandler::SendFile(SOCKET clientSocket, const std::string& urlPath)
+    {
+        std::string filePath = FileHandler::ConvertToPathWindows(urlPath);
+
+        std::ifstream file(filePath, std::ios::binary | std::ios::ate);
+        if (!file.is_open()) 
+        {
+            std::string notFound = "HTTP/1.1 404 Not Found\r\n\r\nFile not found.";
+            send(clientSocket, notFound.c_str(), (int)notFound.size(), 0);
+            return;
+        }
+
+        std::streamsize fileSize = file.tellg();
+        file.seekg(0, std::ios::beg);
+
+        std::string header =
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: " + GetContentType(filePath) + "\r\n"
+            "Content-Length: " + std::to_string(fileSize) + "\r\n"
+            "Connection: close\r\n\r\n";
+
+        send(clientSocket, header.c_str(), (int)header.size(), 0);
+
+        const int BUFFER_SIZE = 4096;
+        char buffer[BUFFER_SIZE];
+        while (file) 
+        {
+            file.read(buffer, BUFFER_SIZE);
+            std::streamsize bytesRead = file.gcount();
+            if (bytesRead > 0)
+                send(clientSocket, buffer, (int)bytesRead, 0);
+        }
+
+        file.close();
+    }
+
+
+    HttpResponse::HttpResponse(SOCKET& winsock) :
+        socket(winsock),
+        StatusCode(200),
+        StatusDescription("OK"),
+        ContentType("text/html"),
+        Body("") { }
+    void HttpResponse::SetHeader(const std::string& name, const std::string& value)
+    {
+        headers_[name] = value;
+    }
+    void HttpResponse::Redirect(const std::string& url)
+    {
+        StatusCode = 302;
+        StatusDescription = "Found";
+        SetHeader("Location", url);
+    }
+    void HttpResponse::Write(const std::string& content) 
+    {
+        Body += content;
+    }
+    std::string HttpResponse::ToString() const 
+    {
+        std::ostringstream oss;
+        oss << "HTTP/1.1 " << StatusCode << " " << StatusDescription << "\r\n";
+        oss << "Content-Type: " << ContentType << "\r\n";
+        for (const auto& [key, value] : headers_) {
+            oss << key << ": " << value << "\r\n";
+        }
+        oss << "Content-Length: " << Body.size() << "\r\n\r\n";
+        oss << Body;
+        return oss.str();
+    }
+
+    HttpRequest::HttpRequest(const char* rawRequest) 
+    {
+        std::istringstream stream(rawRequest);
+        std::string line;
+        if (std::getline(stream, line)) 
+        {
+            std::istringstream reqLine(line);
+            reqLine >> method;
+            std::string fullPath;
+            reqLine >> fullPath;
+            reqLine >> httpVersion;
+
+            size_t qPos = fullPath.find('?');
+            if (qPos != std::string::npos) 
+            {
+                url = fullPath.substr(0, qPos);
+                parseQueryString(fullPath.substr(qPos + 1));
+            }
+            else {
+                url = fullPath;
+            }
+        }
+        while (std::getline(stream, line))
+        {
+            if (line == "\r" || line.empty())
+                break;
+
+            size_t colon = line.find(':');
+            if (colon != std::string::npos) 
+            {
+                std::string key = line.substr(0, colon);
+                std::string value = line.substr(colon + 1);
+                trim(key);
+                trim(value);
+                headers[key] = value;
+
+                if (key == "Cookie") 
+                {
+                    parseCookies(value);
+                }
+            }
+        }
+
+        std::ostringstream bodyStream;
+        while (std::getline(stream, line)) 
+        {
+            bodyStream << line << "\n";
+        }
+        body = bodyStream.str();
+    }
+    HttpRequest::HttpRequest(SOCKET& socket)
+    {
+        Socket = socket;
+        char buffer[1024];
+        int received = recv(socket, buffer, sizeof(buffer) - 1, 0);
+        std::istringstream stream(buffer);
+        std::string line;
+        if (std::getline(stream, line))
+        {
+            std::istringstream reqLine(line);
+            reqLine >> method;
+            std::string fullPath;
+            reqLine >> fullPath;
+            reqLine >> httpVersion;
+
+            size_t qPos = fullPath.find('?');
+            if (qPos != std::string::npos)
+            {
+                url = fullPath.substr(0, qPos);
+                parseQueryString(fullPath.substr(qPos + 1));
+            }
+            else
+            {
+                url = fullPath;
+            }
+        }
+        while (std::getline(stream, line))
+        {
+            if (line == "\r" || line.empty())
+                break;
+
+            size_t colon = line.find(':');
+            if (colon != std::string::npos) {
+                std::string key = line.substr(0, colon);
+                std::string value = line.substr(colon + 1);
+                trim(key);
+                trim(value);
+                headers[key] = value;
+
+                if (key == "Cookie") {
+                    parseCookies(value);
+                }
+            }
+        }
+
+        std::ostringstream bodyStream;
+        while (std::getline(stream, line))
+        {
+            bodyStream << line << "\n";
+        }
+        body = bodyStream.str();
+    }
+    std::string HttpRequest::getHeader(const std::string& name) const 
+    {
+        auto it = headers.find(name);
+        return (it != headers.end()) ? it->second : "";
+    }
+
+    std::string HttpRequest::getCookie(const std::string& name) const 
+    {
+        auto it = cookies.find(name);
+        return (it != cookies.end()) ? it->second : "";
+    }
+
+    std::string HttpRequest::getQueryParam(const std::string& name) const 
+    {
+        auto it = queryParams.find(name);
+        return (it != queryParams.end()) ? it->second : "";
+    }
+
+    void HttpRequest::trim(std::string& s) 
+    {
+        s.erase(0, s.find_first_not_of(" \t\r\n"));
+        s.erase(s.find_last_not_of(" \t\r\n") + 1);
+    }
+
+    void HttpRequest::parseQueryString(const std::string& query) 
+    {
+        std::istringstream qs(query);
+        std::string pair;
+        while (std::getline(qs, pair, '&'))
+        {
+            size_t eq = pair.find('=');
+            if (eq != std::string::npos) 
+            {
+                std::string key = pair.substr(0, eq);
+                std::string val = pair.substr(eq + 1);
+                queryParams[key] = val;
+            }
+        }
+    }
+
+    void HttpRequest::parseCookies(const std::string& cookieHeader) 
+    {
+        std::istringstream ss(cookieHeader);
+        std::string pair;
+        while (std::getline(ss, pair, ';')) 
+        {
+            size_t eq = pair.find('=');
+            if (eq != std::string::npos) {
+                std::string key = pair.substr(0, eq);
+                std::string val = pair.substr(eq + 1);
+                trim(key);
+                trim(val);
+                cookies[key] = val;
+            }
+        }
+    }
+
+    void Router::addRoute(const std::string& path, Handler handler)
+    {
+        routes_[path] = handler;
+    }
+
+    std::string Router::handleRequest(const std::string& requestLine)
+    {
+        for (const auto& [path, handler] : routes_) 
+        {
+            if (requestLine.find("GET " + path + " ") != std::string::npos)
+            {
+                return handler();
+            }
+        }
+        return "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";
+    }
+
+    Server::Server(unsigned short port)
+        : port_(port), listenSocket_(INVALID_SOCKET), running_(false), router_(nullptr) {}
+
+    bool Server::start()
+    {
+        WSADATA wsaData;
+        if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) return false;
+
+        listenSocket_ = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        if (listenSocket_ == INVALID_SOCKET) return false;
+
+        sockaddr_in service{};
+        service.sin_family = AF_INET;
+        service.sin_addr.s_addr = INADDR_ANY;
+        service.sin_port = htons(port_);
+
+        if (bind(listenSocket_, (SOCKADDR*)&service, sizeof(service)) == SOCKET_ERROR) return false;
+        if (listen(listenSocket_, SOMAXCONN) == SOCKET_ERROR) return false;
+
+        running_ = true;
+        threads_.emplace_back(&Server::acceptLoop, this);
+        return true;
+    }
+    void Server::stop()
+    {
+        running_ = false;
+        closesocket(listenSocket_);
+        WSACleanup();
+    }
+    void Server::setRouter(Router* router)
+    {
+        router_ = router;
+    }
+    void Server::acceptLoop()
+    {
+        while (running_)
+        {
+            SOCKET client = accept(listenSocket_, nullptr, nullptr);
+            if (client == INVALID_SOCKET) continue;
+            threads_.emplace_back(&Server::handleClient, this, client);
+            threads_.back().detach();
+        }
+    }
+    void Server::handleClient(SOCKET clientSocket)
+    {
+        char buffer[1024];
+        int received = recv(clientSocket, buffer, sizeof(buffer) - 1, 0);
+        if (received > 0)
+        {
+            HttpRequest request(buffer);
+            std::cout << "Method: " << request.method << std::endl;
+            std::cout << "Path: " << request.url << std::endl;
+            std::cout << "HTTP Version: " << request.httpVersion << std::endl;
+
+            std::cout << "\nHeaders:\n";
+            for (const auto& [key, value] : request.headers) 
+            {
+                std::cout << key << ": " << value << std::endl;
+            }
+
+            std::cout << "\nCookies:\n";
+            for (const auto& [key, value] : request.cookies) 
+            {
+                std::cout << key << ": " << value << std::endl;
+            }
+
+            std::cout << "\nQuery Parameters:\n";
+            for (const auto& [key, value] : request.queryParams) 
+            {
+                std::cout << key << ": " << value << std::endl;
+            }
+
+            std::cout << "\nBody:\n" << request.body << std::endl;
+
+            buffer[received] = '\0';
+            std::string req(buffer);
+            std::string response = router_ ? router_->handleRequest(req) : "HTTP/1.1 404 Not Found\r\n\r\n";
+            send(clientSocket, response.c_str(), (int)response.size(), 0);
+        }
+        closesocket(clientSocket);
+    }
+}
