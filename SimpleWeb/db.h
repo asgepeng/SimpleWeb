@@ -106,7 +106,7 @@ namespace Data
         void Disconnect();
 
         void ExecuteJsonObject(const std::string& command, std::ostringstream& ss);
-        void ExecuteHtmlTable(const std::string& command, std::ostringstream& ss);
+        std::string ExecuteHtmlTable(const std::string& command);
         void ExecuteReader(const std::string& command, std::function<void(DbReader)> handler);
         bool ExecuteNonQuery(const std::string& command);
         int ExecuteScalarInt(const std::string& query);

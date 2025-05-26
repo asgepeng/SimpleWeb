@@ -77,10 +77,10 @@ namespace Web
     class Router
     {
     public:
-        using Handler = std::function<std::string()>;
+        using Handler = std::function<std::string(HttpContext&)>;
 
         void addRoute(const std::string& path, Handler handler);
-        std::string handleRequest(const std::string& requestLine);
+        std::string handleRequest(const std::string& requestLine, HttpContext& context);
 
     private:
         std::unordered_map<std::string, Handler> routes_;

@@ -165,8 +165,9 @@ namespace Data
             hEnv = nullptr;
         }
     }
-    void DbClient::ExecuteHtmlTable(const std::string& command, std::ostringstream& ss)
+    std::string DbClient::ExecuteHtmlTable(const std::string& command)
     {
+        std::ostringstream ss;
         ss << "<table class=\"table\">";
         ExecuteReader(command, [&](Data::DbReader reader)
             {
@@ -209,6 +210,7 @@ namespace Data
                 }
             });
         ss << "</table>";
+        return ss.str();
     }
     void DbClient::ExecuteJsonObject(const std::string& command, std::ostringstream& ss)
     {

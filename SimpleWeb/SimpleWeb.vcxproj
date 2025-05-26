@@ -21,14 +21,18 @@
   <ItemGroup>
     <ClInclude Include="appconfig.h" />
     <ClInclude Include="db.h" />
+    <ClInclude Include="home.h" />
     <ClInclude Include="mvc.h" />
+    <ClInclude Include="product.h" />
     <ClInclude Include="web.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="appconfig.cpp" />
     <ClCompile Include="db.cpp" />
+    <ClCompile Include="home.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="mvc.cpp" />
+    <ClCompile Include="product.cpp" />
     <ClCompile Include="web.cpp" />
   </ItemGroup>
   <PropertyGroup Label="Globals">

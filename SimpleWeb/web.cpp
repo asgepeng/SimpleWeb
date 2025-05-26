@@ -235,13 +235,13 @@ namespace Web
         routes_[path] = handler;
     }
 
-    std::string Router::handleRequest(const std::string& requestLine)
+    std::string Router::handleRequest(const std::string& requestLine, HttpContext& context)
     {
         for (const auto& [path, handler] : routes_) 
         {
             if (requestLine.find("GET " + path + " ") != std::string::npos)
             {
-                return handler();
+                return handler(context);
             }
         }
         return "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";
@@ -304,7 +304,7 @@ namespace Web
                 HttpContext ctx(request);
 
                 std::string req(buffer);
-                std::string response = router_ ? router_->handleRequest(req) : "HTTP/1.1 404 Not Found\r\n\r\n";
+                std::string response = router_ ? router_->handleRequest(req, ctx) : "HTTP/1.1 404 Not Found\r\n\r\n";
                 send(clientSocket, response.c_str(), (int)response.size(), 0);
             }
         }
