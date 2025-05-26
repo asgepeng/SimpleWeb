@@ -21,6 +21,10 @@ int wmain(int argc, wchar_t* argv[]) {
         ProductController product(context);
         return product.Index().ToString();
         });
+    router.addRoute("GET", "/products/edit/{id}", [](Web::HttpContext& context) {
+        ProductController p(context);
+        return p.Edit(std::stoi(context.RouteData.at("id"))).ToString();
+        });
     Web::Server server(80);
     server.setRouter(&router);
     if (!server.start()) 

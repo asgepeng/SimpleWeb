@@ -234,7 +234,8 @@ namespace Web
         routes_.push_back(RouteEntry{ method, RoutePattern(pattern), std::move(handler) });
     }
 
-    std::string Router::handleRequest(HttpContext& ctx) {
+    std::string Router::handleRequest(HttpContext& ctx) 
+    {
         for (auto& route : routes_) 
         {
             if (route.method == ctx.Request.method) 
@@ -247,7 +248,6 @@ namespace Web
                 }
             }
         }
-
         return "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";
     }
 

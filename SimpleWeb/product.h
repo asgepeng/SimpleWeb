@@ -8,6 +8,7 @@ class ProductController : Web::Mvc::Controller
 public:
 	ProductController(Web::HttpContext& context) : Web::Mvc::Controller(context) { }
 	Web::Mvc::View Index();
+	Web::Mvc::View Edit(int id);
 private:
 	Data::DbClient db;
 };

@@ -52,7 +52,7 @@ namespace Data
     {
         T value = {};
         SQLLEN len = 0;
-        SQLRETURN ret = SQLGetData(SqlStatement, columnIndex + 1, targetType, &value, sizeof(T), &len);
+        SQLRETURN ret = SQLGetData(SqlStatement, columnIndex, targetType, &value, sizeof(T), &len);
         return SQL_SUCCEEDED(ret) && len != SQL_NULL_DATA ? value : defaultValue;
     }
     bool DbReader::GetBoolean(short columnIndex)
