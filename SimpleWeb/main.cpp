@@ -13,11 +13,11 @@
 
 int wmain(int argc, wchar_t* argv[]) {
     Web::Router router;
-    router.addRoute("/", [](Web::HttpContext& context) {
+    router.addRoute("GET", "/", [](Web::HttpContext& context) {
         HomeController home(context);
         return home.Index().ToString();
         });
-    router.addRoute("/products", [](Web::HttpContext& context) {
+    router.addRoute("GET", "/products", [](Web::HttpContext& context) {
         ProductController product(context);
         return product.Index().ToString();
         });

@@ -230,20 +230,24 @@ namespace Web
         }
     }
 
-    void Router::addRoute(const std::string& path, Handler handler)
-    {
-        routes_[path] = handler;
+    void Router::addRoute(const std::string& method, const std::string& pattern, Handler handler) {
+        routes_.push_back(RouteEntry{ method, RoutePattern(pattern), std::move(handler) });
     }
 
-    std::string Router::handleRequest(const std::string& requestLine, HttpContext& context)
-    {
-        for (const auto& [path, handler] : routes_) 
+    std::string Router::handleRequest(HttpContext& ctx) {
+        for (auto& route : routes_) 
         {
-            if (requestLine.find("GET " + path + " ") != std::string::npos)
+            if (route.method == ctx.Request.method) 
             {
-                return handler(context);
+                std::unordered_map<std::string, std::string> routeValues;
+                if (route.pattern.match(ctx.Request.url, routeValues))
+                {
+                    ctx.RouteData = std::move(routeValues);
+                    return route.handler(ctx);
+                }
             }
         }
+
         return "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";
     }
 
@@ -302,12 +306,57 @@ namespace Web
             if (!StaticFileHandler::TryHandleRequest(request, clientSocket))
             {
                 HttpContext ctx(request);
-
-                std::string req(buffer);
-                std::string response = router_ ? router_->handleRequest(req, ctx) : "HTTP/1.1 404 Not Found\r\n\r\n";
+                std::string response = router_ ? router_->handleRequest(ctx) : "HTTP/1.1 404 Not Found\r\n\r\n";
                 send(clientSocket, response.c_str(), (int)response.size(), 0);
             }
         }
         closesocket(clientSocket);
+    }
+    RoutePattern::RoutePattern(const std::string& pattern)
+    {
+        std::istringstream iss(pattern);
+        std::string segment;
+        while (std::getline(iss, segment, '/')) 
+        {
+            if (!segment.empty())
+            {
+                if (segment.front() == '{' && segment.back() == '}') {
+                    segments_.push_back(segment.substr(1, segment.size() - 2));
+                    isParam_.push_back(true);
+                }
+                else {
+                    segments_.push_back(segment);
+                    isParam_.push_back(false);
+                }
+            }
+        }
+    }
+    bool RoutePattern::match(const std::string& path, std::unordered_map<std::string, std::string>& routeValues) const
+    {
+        std::istringstream iss(path);
+        std::string segment;
+        std::vector<std::string> pathSegments;
+
+        while (std::getline(iss, segment, '/'))
+        {
+            if (!segment.empty()) {
+                pathSegments.push_back(segment);
+            }
+        }
+
+        if (pathSegments.size() != segments_.size())
+            return false;
+
+        for (size_t i = 0; i < segments_.size(); ++i) 
+        {
+            if (isParam_[i]) {
+                routeValues[segments_[i]] = pathSegments[i];
+            }
+            else if (segments_[i] != pathSegments[i]) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

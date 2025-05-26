@@ -68,22 +68,40 @@ namespace Web
     public:
         HttpRequest Request;
         HttpResponse Response;
+        
+        std::unordered_map<std::string, std::string> RouteData;
 
         HttpContext(const HttpRequest& req)
             : Request(req), Response(Request.Socket) {}
     };
 
+    class RoutePattern
+    {
+    public:
+        explicit RoutePattern(const std::string& pattern);
+        bool match(const std::string& path, std::unordered_map<std::string, std::string>& routeValues) const;
+
+    private:
+        std::vector<std::string> segments_;
+        std::vector<bool> isParam_;
+    };
 
     class Router
     {
     public:
         using Handler = std::function<std::string(HttpContext&)>;
 
-        void addRoute(const std::string& path, Handler handler);
-        std::string handleRequest(const std::string& requestLine, HttpContext& context);
+        void addRoute(const std::string& method, const std::string& pattern, Handler handler);
+        std::string handleRequest(HttpContext& ctx);
 
     private:
-        std::unordered_map<std::string, Handler> routes_;
+        struct RouteEntry {
+            std::string method;
+            RoutePattern pattern;
+            Handler handler;
+        };
+
+        std::vector<RouteEntry> routes_;
     };
 
     class Server
