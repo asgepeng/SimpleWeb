@@ -12,19 +12,9 @@
 
 namespace Web
 {
-    class FileHandler
-    {
-    public:
-        static bool IsFileRequest(std::string url);
-        static std::string ConvertToPathWindows(const std::string& url);
-        static std::string GetContentType(const std::string& path);
-        static void SendFile(SOCKET clientSocket, const std::string& urlPath);
-    };
-
     class HttpRequest {
     public:
-        HttpRequest(const char* rawRequest);
-        HttpRequest(SOCKET& socket);
+        HttpRequest(const char* rawRequest, SOCKET clientSocket);
         std::string method;
         std::string url;
         std::string httpVersion;
@@ -44,6 +34,17 @@ namespace Web
         void parseCookies(const std::string& cookieHeader);
     };
 
+    class StaticFileHandler
+    {
+    public:
+        static bool TryHandleRequest(const HttpRequest& request, SOCKET clientSocket);
+    private:
+        static std::string ConvertToPathWindows(const std::string& url);
+        static std::string GetContentType(const std::string& path);
+        static bool IsFileRequest(const std::string& url);
+        static void SendFile(SOCKET clientSocket, const std::string& filePath);
+    };
+
     class HttpResponse {
     public:
         int StatusCode;
@@ -51,7 +52,7 @@ namespace Web
         std::string ContentType;
         std::string Body;
 
-        HttpResponse(SOCKET& winsock);
+        HttpResponse(SOCKET& clientSocket);
 
         void SetHeader(const std::string& name, const std::string& value);
         void Redirect(const std::string& url);
@@ -65,12 +66,11 @@ namespace Web
 
     class HttpContext {
     public:
-        SOCKET Socket;
         HttpRequest Request;
         HttpResponse Response;
 
-        HttpContext(SOCKET s, const HttpRequest& req)
-            : Socket(s), Request(req), Response(s) {}
+        HttpContext(const HttpRequest& req)
+            : Request(req), Response(Request.Socket) {}
     };
 
 

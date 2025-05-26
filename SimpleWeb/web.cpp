@@ -1,4 +1,6 @@
 #include "web.h"
+#include "mvc.h"
+
 #include <sstream>
 #include <algorithm>
 #include <fstream>
@@ -6,16 +8,10 @@
 #pragma comment(lib, "ws2_32.lib")
 namespace Web
 {
-    bool Web::FileHandler::IsFileRequest(std::string url)
+    //STATIC FILE HANDLER
+    std::string StaticFileHandler::ConvertToPathWindows(const std::string& url)
     {
-        size_t dot = url.find_last_of('.');
-        size_t slash = url.find_last_of('/');
-        return dot != std::string::npos && (slash == std::string::npos || dot > slash);
-    }
-
-    std::string Web::FileHandler::ConvertToPathWindows(const std::string& url)
-    {
-        std::string localPath = "." + url;
+        std::string localPath = "E:\\PointOfSale\\SimpleWeb\\x64\\Release\\wwwroot" + url;
         for (auto& ch : localPath)
         {
             if (ch == '/') ch = '\\';
@@ -23,52 +19,47 @@ namespace Web
         return localPath;
     }
 
-    std::string Web::FileHandler::GetContentType(const std::string& path)
+    std::string StaticFileHandler::GetContentType(const std::string& path)
     {
-        static const std::unordered_map<std::string, std::string> mimeTypes = {
-            {".html", "text/html"},
-            {".htm", "text/html"},
-            {".css", "text/css"},
-            {".js", "application/javascript"},
-            {".json", "application/json"},
-            {".png", "image/png"},
-            {".jpg", "image/jpeg"},
-            {".jpeg", "image/jpeg"},
-            {".gif", "image/gif"},
-            {".svg", "image/svg+xml"},
-            {".ico", "image/x-icon"},
-            {".txt", "text/plain"},
-            {".xml", "application/xml"},
-            {".pdf", "application/pdf"},
-            {".zip", "application/zip"},
-            {".rar", "application/vnd.rar"},
-            {".mp3", "audio/mpeg"},
-            {".mp4", "video/mp4"},
-            {".webm", "video/webm"},
-            {".woff", "font/woff"},
-            {".woff2", "font/woff2"},
-            {".ttf", "font/ttf"},
-            {".otf", "font/otf"}
+        static const std::unordered_map<std::string, std::string> mimeTypes = 
+        {
+            {".html", "text/html"}, {".css", "text/css"}, {".js", "application/javascript"},
+            {".png", "image/png"}, {".jpg", "image/jpeg"}, {".jpeg", "image/jpeg"},
+            {".gif", "image/gif"}, {".svg", "image/svg+xml"}, {".ico", "image/x-icon"},
+            {".json", "application/json"}, {".txt", "text/plain"}, {".xml", "application/xml"},
+            {".pdf", "application/pdf"}, {".zip", "application/zip"}, {".rar", "application/vnd.rar"},
+            {".mp3", "audio/mpeg"}, {".mp4", "video/mp4"}, {".webm", "video/webm"},
+            {".woff", "font/woff"}, {".woff2", "font/woff2"}, {".ttf", "font/ttf"}, {".otf", "font/otf"}
         };
 
         size_t dot = path.find_last_of('.');
-        if (dot != std::string::npos) {
+        if (dot != std::string::npos) 
+        {
             std::string ext = path.substr(dot);
             auto it = mimeTypes.find(ext);
-            if (it != mimeTypes.end()) {
-                return it->second;
-            }
+            if (it != mimeTypes.end()) return it->second;
         }
         return "application/octet-stream";
     }
-    void FileHandler::SendFile(SOCKET clientSocket, const std::string& urlPath)
-    {
-        std::string filePath = FileHandler::ConvertToPathWindows(urlPath);
 
+    bool StaticFileHandler::TryHandleRequest(const HttpRequest& request, SOCKET clientSocket)
+    {
+        if (!IsFileRequest(request.url)) return false;
+
+        std::string fullPath = ConvertToPathWindows(request.url);
+        std::ifstream file(fullPath, std::ios::binary);
+        if (!file.is_open()) return false;
+        file.close();
+
+        SendFile(clientSocket, fullPath);
+        return true;
+    }
+
+    void StaticFileHandler::SendFile(SOCKET clientSocket, const std::string& filePath)
+    {
         std::ifstream file(filePath, std::ios::binary | std::ios::ate);
-        if (!file.is_open()) 
-        {
-            std::string notFound = "HTTP/1.1 404 Not Found\r\n\r\nFile not found.";
+        if (!file.is_open()) {
+            std::string notFound = "HTTP/1.1 404 Not Found\r\nContent-Type: text/plain\r\n\r\nFile not found.";
             send(clientSocket, notFound.c_str(), (int)notFound.size(), 0);
             return;
         }
@@ -81,23 +72,22 @@ namespace Web
             "Content-Type: " + GetContentType(filePath) + "\r\n"
             "Content-Length: " + std::to_string(fileSize) + "\r\n"
             "Connection: close\r\n\r\n";
-
         send(clientSocket, header.c_str(), (int)header.size(), 0);
 
-        const int BUFFER_SIZE = 4096;
+        const int BUFFER_SIZE = 8192;
         char buffer[BUFFER_SIZE];
-        while (file) 
-        {
-            file.read(buffer, BUFFER_SIZE);
-            std::streamsize bytesRead = file.gcount();
-            if (bytesRead > 0)
-                send(clientSocket, buffer, (int)bytesRead, 0);
+        while (file.read(buffer, BUFFER_SIZE) || file.gcount() > 0) {
+            send(clientSocket, buffer, static_cast<int>(file.gcount()), 0);
         }
-
-        file.close();
     }
-
-
+    bool StaticFileHandler::IsFileRequest(const std::string& url)
+    {
+        size_t dot = url.find_last_of('.');
+        size_t slash = url.find_last_of('/');
+        return dot != std::string::npos && (slash == std::string::npos || dot > slash);
+    }
+    //END OF STATIC FILE HANDLER
+    //HTTP RESPONSE
     HttpResponse::HttpResponse(SOCKET& winsock) :
         socket(winsock),
         StatusCode(200),
@@ -131,7 +121,7 @@ namespace Web
         return oss.str();
     }
 
-    HttpRequest::HttpRequest(const char* rawRequest) 
+    HttpRequest::HttpRequest(const char* rawRequest, SOCKET clientSocket)
     {
         std::istringstream stream(rawRequest);
         std::string line;
@@ -180,58 +170,7 @@ namespace Web
             bodyStream << line << "\n";
         }
         body = bodyStream.str();
-    }
-    HttpRequest::HttpRequest(SOCKET& socket)
-    {
-        Socket = socket;
-        char buffer[1024];
-        int received = recv(socket, buffer, sizeof(buffer) - 1, 0);
-        std::istringstream stream(buffer);
-        std::string line;
-        if (std::getline(stream, line))
-        {
-            std::istringstream reqLine(line);
-            reqLine >> method;
-            std::string fullPath;
-            reqLine >> fullPath;
-            reqLine >> httpVersion;
-
-            size_t qPos = fullPath.find('?');
-            if (qPos != std::string::npos)
-            {
-                url = fullPath.substr(0, qPos);
-                parseQueryString(fullPath.substr(qPos + 1));
-            }
-            else
-            {
-                url = fullPath;
-            }
-        }
-        while (std::getline(stream, line))
-        {
-            if (line == "\r" || line.empty())
-                break;
-
-            size_t colon = line.find(':');
-            if (colon != std::string::npos) {
-                std::string key = line.substr(0, colon);
-                std::string value = line.substr(colon + 1);
-                trim(key);
-                trim(value);
-                headers[key] = value;
-
-                if (key == "Cookie") {
-                    parseCookies(value);
-                }
-            }
-        }
-
-        std::ostringstream bodyStream;
-        while (std::getline(stream, line))
-        {
-            bodyStream << line << "\n";
-        }
-        body = bodyStream.str();
+        Socket = clientSocket;
     }
     std::string HttpRequest::getHeader(const std::string& name) const 
     {
@@ -280,7 +219,8 @@ namespace Web
         while (std::getline(ss, pair, ';')) 
         {
             size_t eq = pair.find('=');
-            if (eq != std::string::npos) {
+            if (eq != std::string::npos)
+            {
                 std::string key = pair.substr(0, eq);
                 std::string val = pair.substr(eq + 1);
                 trim(key);
@@ -356,35 +296,17 @@ namespace Web
         int received = recv(clientSocket, buffer, sizeof(buffer) - 1, 0);
         if (received > 0)
         {
-            HttpRequest request(buffer);
-            std::cout << "Method: " << request.method << std::endl;
-            std::cout << "Path: " << request.url << std::endl;
-            std::cout << "HTTP Version: " << request.httpVersion << std::endl;
-
-            std::cout << "\nHeaders:\n";
-            for (const auto& [key, value] : request.headers) 
-            {
-                std::cout << key << ": " << value << std::endl;
-            }
-
-            std::cout << "\nCookies:\n";
-            for (const auto& [key, value] : request.cookies) 
-            {
-                std::cout << key << ": " << value << std::endl;
-            }
-
-            std::cout << "\nQuery Parameters:\n";
-            for (const auto& [key, value] : request.queryParams) 
-            {
-                std::cout << key << ": " << value << std::endl;
-            }
-
-            std::cout << "\nBody:\n" << request.body << std::endl;
-
             buffer[received] = '\0';
-            std::string req(buffer);
-            std::string response = router_ ? router_->handleRequest(req) : "HTTP/1.1 404 Not Found\r\n\r\n";
-            send(clientSocket, response.c_str(), (int)response.size(), 0);
+
+            HttpRequest request(buffer, clientSocket);
+            if (!StaticFileHandler::TryHandleRequest(request, clientSocket))
+            {
+                HttpContext ctx(request);
+
+                std::string req(buffer);
+                std::string response = router_ ? router_->handleRequest(req) : "HTTP/1.1 404 Not Found\r\n\r\n";
+                send(clientSocket, response.c_str(), (int)response.size(), 0);
+            }
         }
         closesocket(clientSocket);
     }

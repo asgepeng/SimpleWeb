@@ -4,8 +4,11 @@
 #include <sstream>
 #include <iostream>
 #include <windows.h>
+#include <filesystem>
 
+const std::string staticDirectory = "E:\\PointOfSale\\SimpleWeb\\x64\\Release\\wwwroot\\";
 int wmain(int argc, wchar_t* argv[]) {
+    std::cout << "Current path: " << std::filesystem::current_path() << std::endl;
     Web::Router router;
     router.addRoute("/", []() 
         {
@@ -17,14 +20,9 @@ int wmain(int argc, wchar_t* argv[]) {
                 << "  <meta charset=\"UTF-8\">\n"
                 << "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n"
                 << "  <title>TESTING</title>\n"
-                << "  <style>\n"
-                << "    body { font-family: Arial, sans-serif; margin: 20px; }\n"
-                << "    table { border-collapse: collapse; width: 100%; }\n"
-                << "    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }\n"
-                << "    th { background-color: #f4f4f4; }\n"
-                << "  </style>\n"
+                << "  <link href=\"/assets/main.min.css\" rel=\"stylesheet\">"
                 << "</head>\n"
-                << "<body>\n";
+                << "<body><img src=\"/images/php.png\"/>\n";
 
             if (db.Connect()) 
             {
@@ -54,7 +52,7 @@ int wmain(int argc, wchar_t* argv[]) {
             return oss.str();
         });
 
-    Web::Server server(8080);
+    Web::Server server(80);
     server.setRouter(&router);
     if (!server.start()) 
     {
@@ -62,7 +60,7 @@ int wmain(int argc, wchar_t* argv[]) {
         return 1;
     }
 
-    std::wcout << L"Server running on http://localhost:8080/\nPress Enter to exit.\n";
+    std::wcout << L"Server running on http://localhost/\nPress Enter to exit.\n";
     std::wstring temp;
     std::getline(std::wcin, temp);
     server.stop();
