@@ -127,3 +127,14 @@ Here are concise summaries of each class in the provided Web namespace inside bo
 - **Notes**:
   - Uses Winsock (`SOCKET`) for low-level networking.
   - Thread-per-connection model (scalability may be limited).
+
+Here is a summary of the C++ MVC inside both mvc.h and mvc.cpp
+
+* **PageBuilder**: Provides a static method to render a layout using specified style, body, and script sections.
+* **FormCollection**: A dictionary-like container for form input (`std::map<string, string>`).
+* **ActionResult**: An abstract base class for results that must implement a `ToString()` method.
+* **View**: Represents an HTML page view with layout and content sections; derived from `ActionResult`.
+* **JsonResult**: Represents a JSON response; also derived from `ActionResult`.
+* **Controller**: Base class for web controllers, holding an `HttpContext` and a `View`.
+
+
