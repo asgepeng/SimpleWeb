@@ -26,7 +26,6 @@ Web::Mvc::View ProductController::Edit(int id)
     if (db.Connect())
     {
         std::string command = "SELECT [name], [description] FROM products WHERE id = " + std::to_string(id);
-        std::cout << command << std::endl;
         db.ExecuteReader(command, [&] (Data::DbReader reader) 
             {
                 if (reader.Read())

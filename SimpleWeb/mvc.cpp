@@ -15,7 +15,6 @@ std::string Web::Mvc::PageBuilder::RenderLayout(
 
     if (!file)
     {
-        std::cerr << "Gagal membuka file: " << filePath << std::endl;
         return "";
     }
     std::string layoutContent((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
@@ -51,6 +50,10 @@ std::string Web::Mvc::View::ToString()
     response.append(content);
 
     return response;
+}
+
+void Web::Mvc::View::ExecuteResult()
+{
 }
 
 

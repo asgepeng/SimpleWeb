@@ -22,12 +22,14 @@ namespace Web::Mvc
 	{
 	public:
 		virtual std::string ToString() = 0;
+		virtual void ExecuteResult() = 0;
 	};
 
 	class View : ActionResult
 	{
 	public:
 		virtual std::string ToString();
+		virtual void ExecuteResult();
 		std::string layout = "";
 		std::string sectionBody = "";
 		std::string sectionStyles = "";

@@ -19,20 +19,40 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="action.h" />
     <ClInclude Include="appconfig.h" />
+    <ClInclude Include="controllers.h" />
     <ClInclude Include="db.h" />
+    <ClInclude Include="dbreader.h" />
     <ClInclude Include="home.h" />
+    <ClInclude Include="httpcontext.h" />
+    <ClInclude Include="initiator.h" />
+    <ClInclude Include="middleware.h" />
     <ClInclude Include="mvc.h" />
     <ClInclude Include="product.h" />
+    <ClInclude Include="request.h" />
+    <ClInclude Include="response.h" />
+    <ClInclude Include="routing.h" />
+    <ClInclude Include="staticfile.h" />
+    <ClInclude Include="threadpool.h" />
     <ClInclude Include="web.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="action.cpp" />
     <ClCompile Include="appconfig.cpp" />
     <ClCompile Include="db.cpp" />
+    <ClCompile Include="dbreader.cpp" />
     <ClCompile Include="home.cpp" />
+    <ClCompile Include="httpcontext.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="middleware.cpp" />
     <ClCompile Include="mvc.cpp" />
     <ClCompile Include="product.cpp" />
+    <ClCompile Include="request.cpp" />
+    <ClCompile Include="response.cpp" />
+    <ClCompile Include="routing.cpp" />
+    <ClCompile Include="staticfile.cpp" />
+    <ClCompile Include="threadpool.cpp" />
     <ClCompile Include="web.cpp" />
   </ItemGroup>
   <PropertyGroup Label="Globals">

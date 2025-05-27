@@ -1,132 +1,52 @@
 #include "db.h"
-#include <iostream>
 
 namespace Data
 {
-    DbReader::DbReader(SQLHSTMT& hStmt) 
+    std::string JsonEscape(const std::string& raw)
     {
-        SqlStatement = hStmt;
-    }
-    bool DbReader::Read()
-    {
-        return SQLFetch(SqlStatement) == SQL_SUCCESS;
-    }
-    std::vector<DbColumn> DbReader::GetColumnsInfo()
-    {
-        std::vector<DbColumn> columns;
-
-        SQLSMALLINT numCols = 0;
-        SQLRETURN ret = SQLNumResultCols(SqlStatement, &numCols);
-        if (!SQL_SUCCEEDED(ret)) {
-            return columns;
-        }
-
-        for (SQLUSMALLINT i = 1; i <= numCols; ++i)
+        std::ostringstream oss;
+        for (char c : raw)
         {
-            SQLWCHAR colName[256];
-            SQLSMALLINT nameLen;
-            SQLSMALLINT dataType;
-            SQLULEN colSize;
-            SQLSMALLINT decimalDigits;
-            SQLSMALLINT nullable;
-
-            ret = SQLDescribeCol(SqlStatement, i, colName, sizeof(colName) / sizeof(SQLWCHAR), &nameLen,
-                &dataType, &colSize, &decimalDigits, &nullable);
-
-            if (SQL_SUCCEEDED(ret))
+            switch (c)
             {
-                DbColumn col;
-                col.columnName = std::string(reinterpret_cast<char*>(colName), nameLen * sizeof(SQLWCHAR));
-                col.dataType = dataType;
-                col.colSize = colSize;
-                col.decimalDigit = decimalDigits;
-                col.nullable = nullable;
-                columns.push_back(col);
-            }
-        }
-        return columns;
-    }
-
-    template<typename T>
-    T DbReader::GetValue(short columnIndex, SQLSMALLINT targetType, T defaultValue)
-    {
-        T value = {};
-        SQLLEN len = 0;
-        SQLRETURN ret = SQLGetData(SqlStatement, columnIndex, targetType, &value, sizeof(T), &len);
-        return SQL_SUCCEEDED(ret) && len != SQL_NULL_DATA ? value : defaultValue;
-    }
-    bool DbReader::GetBoolean(short columnIndex)
-    {
-        return GetValue<char>(columnIndex, SQL_C_BIT, false) != 0;
-    }
-    int16_t DbReader::GetInt16(short columnIndex)
-    {
-        return GetValue<int16_t>(columnIndex, SQL_C_SSHORT, (int16_t)0);
-    }
-    int32_t DbReader::GetInt32(short columnIndex)
-    {
-        return GetValue<int32_t>(columnIndex, SQL_C_SLONG, (int32_t)0);
-    }
-    int64_t DbReader::GetInt64(short columnIndex)
-    {
-        return GetValue<int64_t>(columnIndex, SQL_C_SBIGINT, (int64_t)0);
-    }
-    float DbReader::GetFloat(short columnIndex)
-    {
-        return GetValue<float>(columnIndex, SQL_C_FLOAT, (float)0);
-    }
-    double DbReader::GetDouble(short columnIndex)
-    {
-        return GetValue<double>(columnIndex, SQL_C_DOUBLE, 0.0);
-    }
-    double DbReader::GetDecimal(short columnIndex)
-    {
-        auto decValue = GetString(columnIndex);
-        return std::stod(decValue);
-    }
-    std::string DbReader::GetString(short columnIndex)
-    {
-        char buffer[1024] = {};
-        SQLLEN len = 0;
-
-        SQLRETURN ret = SQLGetData(SqlStatement, columnIndex, SQL_C_CHAR, buffer, sizeof(buffer), &len);
-        return SQL_SUCCEEDED(ret) && len != SQL_NULL_DATA ? std::string(buffer) : "";
-    }
-    std::vector<uint8_t> DbReader::GetStream(const SQLSMALLINT ordinal)
-    {
-        std::vector<uint8_t> buffer;
-        const size_t chunkSize = 4096;
-        uint8_t tempBuffer[chunkSize];
-        SQLLEN bytesRead = 0;
-
-        SQLRETURN ret;
-        do
-        {
-            ret = SQLGetData(SqlStatement, ordinal, SQL_C_BINARY, tempBuffer, chunkSize, &bytesRead);
-
-            if (ret == SQL_SUCCESS || ret == SQL_SUCCESS_WITH_INFO)
-            {
-                if (bytesRead > 0)
+            case '\"': oss << "\\\""; break;
+            case '\\': oss << "\\\\"; break;
+            case '\b': oss << "\\b";  break;
+            case '\f': oss << "\\f";  break;
+            case '\n': oss << "\\n";  break;
+            case '\r': oss << "\\r";  break;
+            case '\t': oss << "\\t";  break;
+            default:
+                if (static_cast<unsigned char>(c) < 0x20)
                 {
-                    size_t validBytes = (bytesRead > chunkSize || bytesRead == SQL_NO_TOTAL)
-                        ? chunkSize
-                        : static_cast<size_t>(bytesRead);
-                    buffer.insert(buffer.end(), tempBuffer, tempBuffer + validBytes);
+                    oss << "\\u"
+                        << std::hex << std::uppercase << std::setfill('0') << std::setw(4)
+                        << (int)(unsigned char)c;
                 }
-            }
-            else if (ret == SQL_NO_DATA)
-            {
+                else
+                {
+                    oss << c;
+                }
                 break;
             }
-            else
-            {
-                throw std::runtime_error("SQLGetData failed to read binary stream.");
-            }
-        } while (ret == SQL_SUCCESS_WITH_INFO || bytesRead == SQL_NO_TOTAL);
-
-        return buffer;
+        }
+        return oss.str();
     }
-
+    std::string HtmlEncode(const std::string& data)
+    {
+        std::ostringstream encoded;
+        for (char c : data) {
+            switch (c) {
+            case '&': encoded << "&amp;"; break;
+            case '<': encoded << "&lt;"; break;
+            case '>': encoded << "&gt;"; break;
+            case '"': encoded << "&quot;"; break;
+            case '\'': encoded << "&#39;"; break;
+            default: encoded << c; break;
+            }
+        }
+        return encoded.str();
+    }
 
     DbClient::DbClient(const std::string& connectionString) : connStr(connectionString) {}
     DbClient::DbClient()
@@ -167,48 +87,60 @@ namespace Data
     }
     std::string DbClient::ExecuteHtmlTable(const std::string& command)
     {
+        std::string result;
+        SQLHSTMT hStmt;
+        SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
+
+        if (SQL_SUCCEEDED(SQLExecDirectA(hStmt, (SQLCHAR*)command.c_str(), SQL_NTS)))
+        {
+            DbReader reader(hStmt);
+            result = ExecuteHtmlTable(reader);
+        }
+        SQLFreeHandle(SQL_HANDLE_STMT, hStmt);
+        return result;
+    }
+    std::string DbClient::ExecuteHtmlTable(Data::DbReader& reader)
+    {
         std::ostringstream ss;
         ss << "<table class=\"table\">";
-        ExecuteReader(command, [&](Data::DbReader reader)
+
+        auto columns = reader.GetColumnsInfo();
+        size_t columnCount = columns.size();
+
+        if (columnCount > 0)
+        {
+            ss << "<thead><tr>";
+            for (const auto& column : columns)
             {
-                auto columns = reader.GetColumnsInfo();
-                size_t columnCount = columns.size();
-
-                if (columnCount > 0) 
+                ss << "<th>" << HtmlEncode(column.columnName) << "</th>";
+            }
+            ss << "</tr></thead><tbody>";
+            while (reader.Read())
+            {
+                ss << "<tr>";
+                for (short i = 0; i < columnCount; i++)
                 {
-                    ss << "<thead><tr>";
-                    for (const auto& column : columns) 
-                    {
-                        ss << "<th>" << Convert::HtmlEncode(column.columnName) << "</th>";
-                    }
-                    ss << "</tr></thead><tbody>";
-                    while (reader.Read()) 
-                    {
-                        ss << "<tr>";
-                        for (short i = 0; i < columnCount; i++) 
-                        {
-                            const auto& column = columns[i];
-                            short ordinal = i + 1;
-                            SQLSMALLINT type = column.dataType;
+                    const auto& column = columns[i];
+                    short ordinal = i + 1;
+                    SQLSMALLINT type = column.dataType;
 
-                            std::string value;
-                            switch (type) 
-                            {
-                            case SQL_BIT:
-                                value = reader.GetBoolean(ordinal) ? "Yes" : "No";
-                                break;
-                            default:
-                                value = reader.GetString(ordinal);
-                                break;
-                            }
-
-                            ss << "<td>" << Convert::HtmlEncode(value) << "</td>";
-                        }
-                        ss << "</tr>";
+                    std::string value;
+                    switch (type)
+                    {
+                    case SQL_BIT:
+                        value = reader.GetBoolean(ordinal) ? "Yes" : "No";
+                        break;
+                    default:
+                        value = reader.GetString(ordinal);
+                        break;
                     }
-                    ss << "</tbody>";
+
+                    ss << "<td>" << HtmlEncode(value) << "</td>";
                 }
-            });
+                ss << "</tr>";
+            }
+            ss << "</tbody>";
+        }
         ss << "</table>";
         return ss.str();
     }
@@ -269,7 +201,7 @@ namespace Data
                         case SQL_TYPE_TIME:
                         case SQL_TYPE_TIMESTAMP:
                         {
-                            auto str = Convert::JsonEscape(reader.GetString(columnOrdinal));
+                            auto str = JsonEscape(reader.GetString(columnOrdinal));
                             value = str.empty() ? "null" : "\"" + str + "\"";
                             break;
                         }
@@ -304,7 +236,6 @@ namespace Data
 
         SQLFreeHandle(SQL_HANDLE_STMT, hStmt);
     }
-
     bool DbClient::ExecuteNonQuery(const std::string& command)
     {
         SQLHSTMT hStmt;
@@ -314,7 +245,6 @@ namespace Data
         SQLFreeHandle(SQL_HANDLE_STMT, hStmt);
         return success;
     }
-
     int DbClient::ExecuteScalarInt(const std::string& query)
     {
         SQLHSTMT hStmt = nullptr;
@@ -336,7 +266,6 @@ namespace Data
         SQLFreeHandle(SQL_HANDLE_STMT, hStmt);
         return value;
     }
-
     std::string DbClient::ExecuteScalarString(const std::string& query)
     {
         SQLHSTMT hStmt = nullptr;
