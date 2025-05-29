@@ -13,11 +13,6 @@ namespace Web::Mvc
 		static std::string RenderLayout(const std::string& layoutName, const std::string& sectionStyles, const std::string& bodyContent, const std::string& sectionScripts);
 	};
 
-	class FormCollection : std::map<std::string, std::string>
-	{
-
-	};
-
 	class ActionResult
 	{
 	public:
@@ -44,12 +39,13 @@ namespace Web::Mvc
 	class Controller
 	{
 	public:
-		Controller(Web::HttpContext& ctx) : context(ctx) { }
+		Controller(Web::HttpContext& ctx) : context(ctx), request(context.request), response(context.response) { }
 	protected:
-		Web::HttpContext Context() { return context; }
+		Web::HttpContext& context;
+		Web::HttpRequest& request;
+		Web::HttpResponse& response;
 		View view;
-	private:
-		Web::HttpContext context;
+		void Send();
 	};
 }
 

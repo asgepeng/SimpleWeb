@@ -3,7 +3,26 @@
 
 namespace Web
 {
-    HttpRequest::HttpRequest(const char* rawRequest, SOCKET clientSocket)
+    static std::string decodeUrl(const std::string& s) {
+        std::string result;
+        for (size_t i = 0; i < s.length(); ++i) {
+            if (s[i] == '+') {
+                result += ' ';
+            }
+            else if (s[i] == '%' && i + 2 < s.length()) {
+                std::string hex = s.substr(i + 1, 2);
+                char ch = static_cast<char>(std::strtol(hex.c_str(), nullptr, 16));
+                result += ch;
+                i += 2;
+            }
+            else {
+                result += s[i];
+            }
+        }
+        return result;
+    }
+
+    HttpRequest::HttpRequest(const char* rawRequest)
     {
         std::istringstream stream(rawRequest);
         std::string line;
@@ -52,7 +71,6 @@ namespace Web
             bodyStream << line << "\n";
         }
         body = bodyStream.str();
-        Socket = clientSocket;
     }
     std::string HttpRequest::getHeader(const std::string& name) const
     {
@@ -68,6 +86,28 @@ namespace Web
     {
         auto it = queryParams.find(name);
         return (it != queryParams.end()) ? it->second : "";
+    }
+    FormCollection HttpRequest::getFormCollection()
+    {
+        FormCollection form;
+
+        std::istringstream stream(body);
+        std::string pair;
+
+        while (std::getline(stream, pair, '&')) {
+            auto pos = pair.find('=');
+            if (pos != std::string::npos) {
+                std::string key = decodeUrl(pair.substr(0, pos));
+                std::string value = decodeUrl(pair.substr(pos + 1));
+
+                Web::HttpRequest::trim(key);
+                Web::HttpRequest::trim(value);
+
+                form[key] = value;
+            }
+        }
+
+        return form;
     }
     void HttpRequest::trim(std::string& s)
     {

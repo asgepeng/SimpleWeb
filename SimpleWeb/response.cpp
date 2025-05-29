@@ -3,8 +3,7 @@
 
 namespace Web
 {
-    HttpResponse::HttpResponse(SOCKET winsock) :
-        socket(winsock),
+    HttpResponse::HttpResponse() :
         statusCode_(200),
         statusDescription_("OK"),
         contentType_("text/html"),

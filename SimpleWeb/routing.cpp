@@ -65,14 +65,13 @@ namespace Web
     {
         for (auto& route : routes)
         {
-            if (route.method == context.Request.method)
+            if (route.method == context.request.method)
             {
                 std::unordered_map<std::string, std::string> routeValues;
-                if (route.pattern.match(context.Request.url, routeValues))
+                if (route.pattern.match(context.request.url, routeValues))
                 {
-                    context.RouteData = std::move(routeValues);
-                    auto response = route.handler(context);
-                    send(context.Request.Socket, response.c_str(), (int)response.size(), 0);
+                    context.routeData = std::move(routeValues);
+                    route.handler(context);
                     return;
                 }
             }
@@ -88,7 +87,7 @@ namespace Web
         response.append("\r\n\r\n");
         response.append(pnfContent);
 
-        send(context.Request.Socket, response.c_str(), (int)response.size(), 0);
+        send(context.socket, response.c_str(), (int)response.size(), 0);
     }
     void Router::Map(const std::string& method, const std::string& pattern, Handler handler)
     {

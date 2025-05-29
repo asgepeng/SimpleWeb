@@ -1,17 +1,20 @@
 #include "web.h"
 #include <iostream>
 #include "initiator.h"
+#include <filesystem>
 
 int main()
 {
+    std::cout << "Current Directory: "
+        << std::filesystem::current_path() << std::endl;
+
     Web::Server app;
     Web::ControllerRoutes routing;
 
-    app.UseController(routing);
+    app.MapController(routing);
 
-    if (!app.Run(80))
+    if (!app.Run())
     {
-        std::cerr << "Server failed to start\n";
         return 1;
     }
 

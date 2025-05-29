@@ -1,20 +1,13 @@
-#pragma once
 #include "web.h"
 #include "db.h"
 #include "staticfile.h"
 #include "threadpool.h"
 
-#include <atomic>
-
-#pragma comment(lib, "ws2_32.lib")
 namespace Web
 {
-    Server::Server() : listener(INVALID_SOCKET), isrun(false), routerPtr(nullptr)
-    {
-        routerPtr = std::make_unique<Router>();
-    }
+    Server::Server() : listener(INVALID_SOCKET), isrun(false), routerPtr(std::make_unique<Router>()) {}
 
-    bool Server::Run(const unsigned short port )
+    bool Server::Run(const unsigned short port)
     {
         WSADATA wsaData;
         if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) return false;
@@ -30,16 +23,47 @@ namespace Web
         if (bind(listener, (SOCKADDR*)&service, sizeof(service)) == SOCKET_ERROR) return false;
         if (listen(listener, SOMAXCONN) == SOCKET_ERROR) return false;
 
+        InitSSL();
+
         isrun = true;
         threads.emplace_back(&Server::AcceptLoop, this);
         return true;
     }
+
     void Server::Stop()
     {
         isrun = false;
+
+        if (sslCtx)
+        {
+            SSL_CTX_free(sslCtx);
+            sslCtx = nullptr;
+        }
+
+        EVP_cleanup();
         closesocket(listener);
         WSACleanup();
     }
+
+    void Server::InitSSL()
+    {
+        SSL_library_init();
+        SSL_load_error_strings();
+        OpenSSL_add_all_algorithms();
+
+        sslCtx = SSL_CTX_new(TLS_server_method());
+        if (!sslCtx) {
+            ERR_print_errors_fp(stderr);
+            exit(1);
+        }
+
+        if (SSL_CTX_use_certificate_file(sslCtx, "server.crt", SSL_FILETYPE_PEM) <= 0 ||
+            SSL_CTX_use_PrivateKey_file(sslCtx, "server.key", SSL_FILETYPE_PEM) <= 0) {
+            ERR_print_errors_fp(stderr);
+            exit(1);
+        }
+    }
+
     void Server::AcceptLoop()
     {
         ThreadPool pool(std::thread::hardware_concurrency());
@@ -54,31 +78,48 @@ namespace Web
                 });
         }
     }
+
     void Server::HandleRequest(SOCKET clientSocket)
     {
-        std::string data;
-        char buffer[1024];
-        int received;
+        SSL* ssl = SSL_new(sslCtx);
+        SSL_set_fd(ssl, (int)clientSocket);
 
-        // read until no more data or error
-        while ((received = recv(clientSocket, buffer, sizeof(buffer), 0)) > 0)
+        if (SSL_accept(ssl) <= 0)
         {
-            data.append(buffer, received);
-            if (data.find("\r\n\r\n") != std::string::npos)
-                break; // end of HTTP headers
-        }
-        if (received <= 0)
-        {
+            ERR_print_errors_fp(stderr);
+            SSL_free(ssl);
             closesocket(clientSocket);
             return;
         }
 
-        HttpRequest request(data.c_str(), clientSocket);
-        if (!StaticFileHandler::TryHandleRequest(request, clientSocket))
+        std::string data;
+        char buffer[1024];
+        int received;
+
+        while ((received = SSL_read(ssl, buffer, sizeof(buffer))) > 0)
         {
-            HttpContext ctx(request);
+            data.append(buffer, received);
+            if (data.find("\r\n\r\n") != std::string::npos)
+                break;
+        }
+
+        if (received <= 0)
+        {
+            SSL_shutdown(ssl);
+            SSL_free(ssl);
+            closesocket(clientSocket);
+            return;
+        }
+
+        HttpRequest request(data.c_str());
+        if (!StaticFileHandler::TryHandleRequest(request, ssl))
+        {
+            HttpContext ctx(request, ssl);
             routerPtr->HandleRequest(ctx);
         }
+
+        SSL_shutdown(ssl);
+        SSL_free(ssl);
         closesocket(clientSocket);
     }
 }

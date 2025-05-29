@@ -5,7 +5,7 @@ namespace Web
 {
     class HttpResponse {
     public:
-        HttpResponse(SOCKET clientSocket);
+        HttpResponse();
 
         void SetHeader(const std::string& name, const std::string& value);
         void Redirect(const std::string& url);
@@ -20,10 +20,7 @@ namespace Web
 
         void ContentType(const std::string& contentType) { contentType_ = contentType; }
         std::string ContentType() { return contentType_; }
-
-        void Send(unsigned __int64 clientSocket);
     private:
-        SOCKET socket;
         std::unordered_map<std::string, std::string> headers_;
         int statusCode_;
         std::string statusDescription_;

@@ -26,8 +26,9 @@ namespace Web
     class Router
     {
     public:
-        using Handler = std::function<std::string(Web::HttpContext&)>;
-        
+        //using Handler = std::function<std::string(Web::HttpContext&)>;
+        using Handler = std::function<void(Web::HttpContext&)>;
+
         void HandleRequest(Web::HttpContext& context);
         void MapGet(const std::string& pattern, Handler handler);
         void MapPost(const std::string& pattern, Handler handler);

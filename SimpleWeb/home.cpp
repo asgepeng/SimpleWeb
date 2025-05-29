@@ -1,16 +1,19 @@
 #include "home.h"
+#include "response.h"
 
-Web::Mvc::View HomeController::Index()
+void HomeController::Index()
 {
     view.layout = "_layout.html";
     view.sectionStyles = "<link href=\"/assets/main.min.css\" rel=\"stylesheet\"/>";
     view.sectionScripts = "<script type=\"text/javascript\" src=\"/scripts/main.min.js\"></script>";
     
     view.sectionBody = "<h1>Hello From C++ Web Server</h1><a href=\"/products\">Check it out</a>";
-    return view;
+    std::string body = Web::Mvc::PageBuilder::RenderLayout(view.layout, view.sectionStyles, view.sectionBody, view.sectionScripts);
+    context.response.Write(body);
+    Send();
 }
 
-std::string HomeController::Index(Web::Mvc::FormCollection form)
+void HomeController::Index(Web::FormCollection& form)
 {
-    return std::string();
+    
 }

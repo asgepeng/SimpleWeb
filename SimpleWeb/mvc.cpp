@@ -61,3 +61,15 @@ std::string Web::Mvc::JsonResult::ToString()
 {
     return std::string();
 }
+
+void Web::Mvc::Controller::Send()
+{
+    std::string content = response.ToString();
+    if (context.ssl)
+    {
+        SSL_write(context.ssl, content.c_str(), (int)content.size());
+    }
+    else {
+        send(context.socket, content.c_str(), (int)content.size(), 0);
+    }
+}

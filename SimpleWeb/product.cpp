@@ -1,6 +1,6 @@
 #include "product.h"
 
-Web::Mvc::View ProductController::Index()
+void ProductController::Index()
 {
     view.layout = "_layout.html";
     view.sectionStyles = "<link href=\"/assets/main.min.css\" rel=\"stylesheet\"/>";
@@ -8,13 +8,15 @@ Web::Mvc::View ProductController::Index()
 
     if (db.Connect())
     {
-        view.sectionBody = db.ExecuteHtmlTable("SELECT * FROM products");
+        view.sectionBody = db.ExecuteHtmlTable("SELECT p.id, p.[name], p.[sku], c.[name] AS category, p.stock, p.unit, p.price, u.[name] AS [created by] FROM products AS p INNER JOIN categories AS c ON p.category = c.id INNER JOIN users AS u ON p.author = u.id WHERE p.deleted = 0");
         db.Disconnect();
     }
-    return view;
+    std::string body = Web::Mvc::PageBuilder::RenderLayout(view.layout, view.sectionStyles, view.sectionBody, view.sectionScripts);
+    context.response.Write(body);
+    Send();
 }
 
-Web::Mvc::View ProductController::Edit(int id)
+void ProductController::Edit(int id)
 {
     view.layout = "_layout.html";
     view.sectionStyles = "<link href=\"/assets/main.min.css\" rel=\"stylesheet\"/>";
@@ -45,5 +47,7 @@ Web::Mvc::View ProductController::Edit(int id)
         "<input id=\"textDesc\" name=\"desc\" value=\"" << description << "\"/>"
         "</form>";
     view.sectionBody = oss.str();
-    return view;
+    std::string body = Web::Mvc::PageBuilder::RenderLayout(view.layout, view.sectionStyles, view.sectionBody, view.sectionScripts);
+    context.response.Write(body);
+    Send();
 }
