@@ -6,9 +6,9 @@
 int main()
 {
     Web::Server app;
-    Web::ControllerRoutes routing;
+    Web::ControllerRoutes routeConfig;
 
-    app.MapController(routing);
+    app.MapController(routeConfig);
 
     if (!app.Run()) return 1;
 

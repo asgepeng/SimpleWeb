@@ -35,6 +35,7 @@
     <ClInclude Include="request.h" />
     <ClInclude Include="response.h" />
     <ClInclude Include="routing.h" />
+    <ClInclude Include="sqlhelper.h" />
     <ClInclude Include="staticfile.h" />
     <ClInclude Include="threadpool.h" />
     <ClInclude Include="web.h" />
@@ -55,6 +56,7 @@
     <ClCompile Include="request.cpp" />
     <ClCompile Include="response.cpp" />
     <ClCompile Include="routing.cpp" />
+    <ClCompile Include="sqlhelper.cpp" />
     <ClCompile Include="staticfile.cpp" />
     <ClCompile Include="threadpool.cpp" />
     <ClCompile Include="web.cpp" />

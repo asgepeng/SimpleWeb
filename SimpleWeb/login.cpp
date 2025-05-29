@@ -1,22 +1,30 @@
 #include "login.h"
-#include <iostream>
+#include "sqlhelper.h"
 
 void LoginController::Index()
 {
-	view.layout = "_layout.html";
+	auto view = GetView();
+	view.layout = "_login_layout.html";
 	view.sectionStyles = "<link href=\"/assets/main.min.css\" rel=\"stylesheet\"/>";
-	view.sectionBody = R"(<form class="form-login" method="POST">
+	auto it = GetViewData().find("invalid-login");
+	if (it != GetViewData().end())
+	{
+		view.sectionBody = "<div class=\"invalid-login\"><span>Invalid Login</span></div>";
+	}
+	view.sectionBody += R"(<form class="form-login" method="POST">
+<img src="/images/logo.png"/ width="128" height="auto">
 <label for="username">Username</label>
 <div style="display:flex;flex-direction:column;">
 <input type="text" id="username" name="username" value=""/>
 <label for="txtpassword">Password</label>
-<input type="password" id="txtpassword" name="txtpassword" value=""/>
+<input type="password" id="txtpassword" name="txtpassword" value=""/></br>
 <input type="submit" value="Login"/>
 </div>
 </form>)";
+
 	view.sectionScripts = "<script src=\"/main.min.js\"><script>";
 	std::string content = Web::Mvc::PageBuilder::RenderLayout(view.layout, view.sectionStyles, view.sectionBody, view.sectionScripts);
-	context.response.Write(content);
+	GetResponse().Write(content);
 	Send();
 }
 
@@ -24,16 +32,31 @@ void LoginController::Index(Web::FormCollection& form)
 {
 	std::string username = form["username"];
 	std::string password = form["txtpassword"];
-	std::cout << "'" << username << "'" << std::endl;
-	std::cout << "'" << password << "'" << std::endl;
-	if (username == "admin" && password == "123")
+
+	std::string sql = "SELECT TOP(1)[id] FROM users WHERE[login] = '" + Helpers::SqlHelper::ConverText(username) + "' AND[password] = HASHBYTES('SHA2_256', '" + Helpers::SqlHelper::ConverText(password) + "')";
+
+	int id = 0;
+	if (db.Connect())
 	{
-		context.response.Redirect("/home");
+		db.ExecuteReader(sql, [&](Data::DbReader reader)
+			{
+				if (reader.Read())
+				{
+					id = reader.GetInt32(1);
+				}
+			}
+		);
+		db.Disconnect();
+	}
+
+	if (id > 0)
+	{
+		GetResponse().Redirect("/home");
 		Send();
 	}
 	else
 	{
-		context.response.Redirect("/");
-		Send();
+		GetViewData()["invalid-login"] = "1";
+		Index();
 	}
 }

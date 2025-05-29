@@ -35,33 +35,6 @@ std::string Web::Mvc::PageBuilder::RenderLayout(
     return layoutContent;
 }
 
-
-std::string Web::Mvc::View::ToString()
-{
-    std::string content = Web::Mvc::PageBuilder::RenderLayout(layout, sectionStyles, sectionBody, sectionScripts);
-    std::string headers =
-        "HTTP/1.1 200 OK\r\n"
-        "Content-Type: text/html\r\n"
-        "Content-Length: " + std::to_string(content.size()) + "\r\n\r\n";
-
-    std::string response;
-    response.reserve(headers.size() + content.size());
-    response.append(headers);
-    response.append(content);
-
-    return response;
-}
-
-void Web::Mvc::View::ExecuteResult()
-{
-}
-
-
-std::string Web::Mvc::JsonResult::ToString()
-{
-    return std::string();
-}
-
 void Web::Mvc::Controller::Send()
 {
     std::string content = response.ToString();

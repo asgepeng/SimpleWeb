@@ -1,5 +1,5 @@
 #include "db.h"
-
+#include <iostream>
 namespace Data
 {
     std::string JsonEscape(const std::string& raw)
@@ -233,7 +233,25 @@ namespace Data
             DbReader reader(hStmt);
             handler(reader);
         }
+        else
+        {
+            // Ambil semua error diagnostic record
+            SQLCHAR sqlState[6];
+            SQLCHAR message[512];
+            SQLINTEGER nativeError;
+            SQLSMALLINT msgLen;
+            SQLSMALLINT i = 1;
 
+            std::cerr << "[ODBC ERROR] SQLExecDirectA failed:\n";
+            while (SQLGetDiagRecA(SQL_HANDLE_STMT, hStmt, i, sqlState, &nativeError, message, sizeof(message), &msgLen) == SQL_SUCCESS)
+            {
+                std::cerr << "  #" << i
+                    << " SQLSTATE: " << sqlState
+                    << ", Native Error: " << nativeError
+                    << ", Message: " << message << "\n";
+                ++i;
+            }
+        }
         SQLFreeHandle(SQL_HANDLE_STMT, hStmt);
     }
     bool DbClient::ExecuteNonQuery(const std::string& command)

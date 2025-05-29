@@ -2,6 +2,7 @@
 
 void ProductController::Index()
 {
+    auto view = GetView();
     view.layout = "_layout.html";
     view.sectionStyles = "<link href=\"/assets/main.min.css\" rel=\"stylesheet\"/>";
     view.sectionScripts = "<script type=\"text/javascript\" src=\"/scripts/main.min.js\"></script>";
@@ -12,12 +13,13 @@ void ProductController::Index()
         db.Disconnect();
     }
     std::string body = Web::Mvc::PageBuilder::RenderLayout(view.layout, view.sectionStyles, view.sectionBody, view.sectionScripts);
-    context.response.Write(body);
+    GetResponse().Write(body);
     Send();
 }
 
 void ProductController::Edit(int id)
 {
+    auto view = GetView();
     view.layout = "_layout.html";
     view.sectionStyles = "<link href=\"/assets/main.min.css\" rel=\"stylesheet\"/>";
     view.sectionScripts = "<script type=\"text/javascript\" src=\"/scripts/main.min.js\"></script>";
@@ -48,6 +50,6 @@ void ProductController::Edit(int id)
         "</form>";
     view.sectionBody = oss.str();
     std::string body = Web::Mvc::PageBuilder::RenderLayout(view.layout, view.sectionStyles, view.sectionBody, view.sectionScripts);
-    context.response.Write(body);
+    GetResponse().Write(body);
     Send();
 }
