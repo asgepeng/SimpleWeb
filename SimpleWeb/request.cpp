@@ -87,16 +87,18 @@ namespace Web
         auto it = queryParams.find(name);
         return (it != queryParams.end()) ? it->second : "";
     }
-    FormCollection HttpRequest::getFormCollection()
+    FormCollection HttpRequest::getFormCollection() const
     {
         FormCollection form;
 
         std::istringstream stream(body);
         std::string pair;
 
-        while (std::getline(stream, pair, '&')) {
+        while (std::getline(stream, pair, '&')) 
+        {
             auto pos = pair.find('=');
-            if (pos != std::string::npos) {
+            if (pos != std::string::npos)
+            {
                 std::string key = decodeUrl(pair.substr(0, pos));
                 std::string value = decodeUrl(pair.substr(pos + 1));
 

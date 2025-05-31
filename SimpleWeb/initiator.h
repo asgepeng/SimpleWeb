@@ -8,7 +8,7 @@ namespace Web
 	{
 	public:
 		void RegisterEndPoints(Router* route) override {
-            route->MapGet("/", [](Web::HttpContext& context) {
+            route->MapGet("/", [](Web::HttpContext& context)  {
                 LoginController login(context);
                 return login.Index();
                 });

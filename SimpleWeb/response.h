@@ -1,5 +1,6 @@
 #pragma once
 #include "request.h"
+#include <chrono>
 
 namespace Web
 {
@@ -8,6 +9,7 @@ namespace Web
         HttpResponse();
 
         void SetHeader(const std::string& name, const std::string& value);
+        void SetCookie(const std::string& name, const std::string& value, const std::chrono::system_clock::time_point& expired);
         void Redirect(const std::string& url);
         void Write(const std::string& content);
         std::string ToString() const;

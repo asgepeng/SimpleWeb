@@ -1,3 +1,5 @@
+#define _CRT_SECURE_NO_WARNINGS
+
 #include "response.h"
 #include <sstream>
 
@@ -11,6 +13,18 @@ namespace Web
     void HttpResponse::SetHeader(const std::string& name, const std::string& value)
     {
         headers_[name] = value;
+    }
+    void HttpResponse::SetCookie(const std::string& name, const std::string& value, const std::chrono::system_clock::time_point& expired)
+    {
+        std::time_t exp_time_t = std::chrono::system_clock::to_time_t(expired);
+        std::tm tm = *std::gmtime(&exp_time_t);
+
+        std::ostringstream oss;
+        oss << std::put_time(&tm, "%a, %d %b %Y %H:%M:%S GMT");
+
+        std::string cookie = name + "=" + value + "; Expires=" + oss.str() + "; Path=/";
+
+        headers_["Set-Cookie"] = cookie;
     }
     void HttpResponse::Redirect(const std::string& url)
     {

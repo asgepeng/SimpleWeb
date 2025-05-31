@@ -21,7 +21,7 @@ namespace Web
         std::string getHeader(const std::string& name) const;
         std::string getCookie(const std::string& name) const;
         std::string getQueryParam(const std::string& name) const;
-		FormCollection getFormCollection();
+		FormCollection getFormCollection() const;
     private:
 		static void trim(std::string& s);
         void parseQueryString(const std::string& query);

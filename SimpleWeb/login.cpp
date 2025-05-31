@@ -1,17 +1,23 @@
 #include "login.h"
 #include "sqlhelper.h"
 
-void LoginController::Index()
+HttpResponse LoginController::Index()
 {
-	auto view = GetView();
-	view.layout = "_login_layout.html";
-	view.sectionStyles = "<link href=\"/assets/main.min.css\" rel=\"stylesheet\"/>";
-	auto it = GetViewData().find("invalid-login");
-	if (it != GetViewData().end())
+	auto userID = Request().getCookie("user-login");
+	if (userID != "")
 	{
-		view.sectionBody = "<div class=\"invalid-login\"><span>Invalid Login</span></div>";
+		return Redirect("/products");
 	}
-	view.sectionBody += R"(<form class="form-login" method="POST">
+	Web::Mvc::Layout layout;
+	layout.styles = R"(<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat+Underline:ital,wght@0,100..900;1,100..900&family=Montserrat:ital,wght@0,100..900;1,100..900&family=Open+Sans:ital,wght@0,300..800;1,300..800&family=Roboto:ital,wght@0,100;0,300;0,400;0,500;0,700;0,900;1,100;1,300;1,400;1,500;1,700;1,900&display=swap" rel="stylesheet">)";
+	auto it = TempData().find("invalid-login");
+	if (it != TempData().end())
+	{
+		layout.content = "<div class=\"invalid-login\"><span>Invalid Login</span></div>";
+	}
+	layout.content += R"(<form class="form-login" method="POST">
 <img src="/images/logo.png"/ width="128" height="auto">
 <label for="username">Username</label>
 <div style="display:flex;flex-direction:column;">
@@ -21,14 +27,10 @@ void LoginController::Index()
 <input type="submit" value="Login"/>
 </div>
 </form>)";
-
-	view.sectionScripts = "<script src=\"/main.min.js\"><script>";
-	std::string content = Web::Mvc::PageBuilder::RenderLayout(view.layout, view.sectionStyles, view.sectionBody, view.sectionScripts);
-	GetResponse().Write(content);
-	Send();
+	return View(layout);
 }
 
-void LoginController::Index(Web::FormCollection& form)
+HttpResponse LoginController::Index(Web::FormCollection& form)
 {
 	std::string username = form["username"];
 	std::string password = form["txtpassword"];
@@ -51,12 +53,12 @@ void LoginController::Index(Web::FormCollection& form)
 
 	if (id > 0)
 	{
-		GetResponse().Redirect("/home");
-		Send();
+		Response().SetHeader("Set-Cookie", "user-login=" + std::to_string(id));
+		return Redirect("/home");
 	}
 	else
 	{
-		GetViewData()["invalid-login"] = "1";
-		Index();
+		TempData()["invalid-login"] = "1";
+		return Index();
 	}
 }

@@ -1,5 +1,6 @@
 #include "routing.h"
 #include "controllers.h"
+#include <iostream>
 
 namespace Web
 {
@@ -61,33 +62,27 @@ namespace Web
 
     /* Class Router */
     /* PRIVATE */
-    void Router::HandleRequest(Web::HttpContext& context)
+    HttpResponse Router::Handle(Web::HttpRequest& request)
     {
         for (auto& route : routes)
         {
-            if (route.method == context.request.method)
+            std::cout << route.method << " vs " << request.method << std::endl;
+            std::cout << request.url << std::endl;
+            if (route.method == request.method)
             {
                 std::unordered_map<std::string, std::string> routeValues;
-                if (route.pattern.match(context.request.url, routeValues))
+                if (route.pattern.match(request.url, routeValues))
                 {
+                    HttpContext context(request);
                     context.routeData = std::move(routeValues);
-                    route.handler(context);
-                    return;
+                    return route.handler(context);
                 }
             }
         }
-
-        const std::string& pnfContent = GetNotFoundContent();
-        std::string contentLength = std::to_string(pnfContent.size());
-
-        std::string response;
-        response.reserve(128 + pnfContent.size()); // preallocate buffer
-        response.append("HTTP/1.1 404 Not Found\r\nContent-Length: ");
-        response.append(contentLength);
-        response.append("\r\n\r\n");
-        response.append(pnfContent);
-
-        send(context.socket, response.c_str(), (int)response.size(), 0);
+        HttpResponse response;
+        response.StatusCode(404);
+        response.Write(GetNotFoundContent());
+        return response;
     }
     void Router::Map(const std::string& method, const std::string& pattern, Handler handler)
     {

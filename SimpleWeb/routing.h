@@ -26,17 +26,17 @@ namespace Web
     class Router
     {
     public:
-        //using Handler = std::function<std::string(Web::HttpContext&)>;
-        using Handler = std::function<void(Web::HttpContext&)>;
+        using Handler = std::function<HttpResponse(HttpContext&)>;
+        HttpResponse Handle(Web::HttpRequest& request);
 
-        void HandleRequest(Web::HttpContext& context);
         void MapGet(const std::string& pattern, Handler handler);
         void MapPost(const std::string& pattern, Handler handler);
         void MapPut(const std::string& pattern, Handler handler);
         void MapDelete(const std::string& pattern, Handler handler);
     private:
         void Map(const std::string& method, const std::string& pattern, Handler handler);
-        struct RouteEntry {
+        struct RouteEntry 
+        {
             std::string method;
             RoutePattern pattern;
             Handler handler;

@@ -1,7 +1,7 @@
 #include "home.h"
 #include "response.h"
 
-void HomeController::Index()
+HttpResponse HomeController::Index()
 {
     auto view = GetView();
     view.layout = "_layout.html";
@@ -10,11 +10,11 @@ void HomeController::Index()
     
     view.sectionBody = "<h1>Hello From C++ Web Server</h1><a href=\"/products\">Check it out</a>";
     std::string body = Web::Mvc::PageBuilder::RenderLayout(view.layout, view.sectionStyles, view.sectionBody, view.sectionScripts);
-    GetResponse().Write(body);
-    Send();
+    Response().Write(body);
+    return Response();
 }
 
-void HomeController::Index(Web::FormCollection& form)
+HttpResponse HomeController::Index(Web::FormCollection& form)
 {
-    
+    return Response();
 }

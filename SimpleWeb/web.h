@@ -18,17 +18,19 @@ namespace Web
         void Stop();
         void MapController(Web::RouteConfig& initializer) 
         {
-            initializer.RegisterEndPoints(routerPtr.get());
+            initializer.RegisterEndPoints(router.get());
         }
     private:
-        void InitSSL();
+        void InitializeSSL();
+
         void AcceptLoop();
-        void HandleRequest(SOCKET clientSocket);
+        void Receive(SOCKET clientSocket);
+        void Send(SSL* ssl, const HttpResponse& response);
 
         SOCKET listener;
 
         std::atomic<bool> isrun;
-        std::unique_ptr<Router> routerPtr;
+        std::unique_ptr<Router> router;
         std::vector<std::thread> threads;
 
         SSL_CTX* sslCtx = nullptr;

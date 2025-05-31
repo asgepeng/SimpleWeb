@@ -5,7 +5,7 @@
 
 namespace Web
 {
-    Server::Server() : listener(INVALID_SOCKET), isrun(false), routerPtr(std::make_unique<Router>()) {}
+    Server::Server() : listener(INVALID_SOCKET), isrun(false), router(std::make_unique<Router>()) {}
 
     bool Server::Run(const unsigned short port)
     {
@@ -23,7 +23,7 @@ namespace Web
         if (bind(listener, (SOCKADDR*)&service, sizeof(service)) == SOCKET_ERROR) return false;
         if (listen(listener, SOMAXCONN) == SOCKET_ERROR) return false;
 
-        InitSSL();
+        InitializeSSL();
 
         isrun = true;
         threads.emplace_back(&Server::AcceptLoop, this);
@@ -44,21 +44,22 @@ namespace Web
         closesocket(listener);
         WSACleanup();
     }
-
-    void Server::InitSSL()
+    void Server::InitializeSSL()
     {
         SSL_library_init();
         SSL_load_error_strings();
         OpenSSL_add_all_algorithms();
 
         sslCtx = SSL_CTX_new(TLS_server_method());
-        if (!sslCtx) {
+        if (!sslCtx) 
+        {
             ERR_print_errors_fp(stderr);
             exit(1);
         }
 
         if (SSL_CTX_use_certificate_file(sslCtx, "server.crt", SSL_FILETYPE_PEM) <= 0 ||
-            SSL_CTX_use_PrivateKey_file(sslCtx, "server.key", SSL_FILETYPE_PEM) <= 0) {
+            SSL_CTX_use_PrivateKey_file(sslCtx, "server.key", SSL_FILETYPE_PEM) <= 0) 
+        {
             ERR_print_errors_fp(stderr);
             exit(1);
         }
@@ -74,12 +75,12 @@ namespace Web
             if (client == INVALID_SOCKET) continue;
 
             pool.enqueue([this, client] {
-                HandleRequest(client);
+                Receive(client);
                 });
         }
     }
 
-    void Server::HandleRequest(SOCKET clientSocket)
+    void Server::Receive(SOCKET clientSocket)
     {
         SSL* ssl = SSL_new(sslCtx);
         SSL_set_fd(ssl, (int)clientSocket);
@@ -99,8 +100,7 @@ namespace Web
         while ((received = SSL_read(ssl, buffer, sizeof(buffer))) > 0)
         {
             data.append(buffer, received);
-            if (data.find("\r\n\r\n") != std::string::npos)
-                break;
+            if (data.find("\r\n\r\n") != std::string::npos) break;
         }
 
         if (received <= 0)
@@ -114,12 +114,17 @@ namespace Web
         HttpRequest request(data.c_str());
         if (!StaticFileHandler::TryHandleRequest(request, ssl))
         {
-            HttpContext ctx(request, ssl);
-            routerPtr->HandleRequest(ctx);
+            HttpResponse response = router->Handle(request);
+            Send(ssl, response);
         }
 
         SSL_shutdown(ssl);
         SSL_free(ssl);
         closesocket(clientSocket);
+    }
+    void Server::Send(SSL* ssl, const HttpResponse& response)
+    {
+        std::string content = response.ToString();
+        SSL_write(ssl, content.c_str(), (int)content.size());
     }
 }
