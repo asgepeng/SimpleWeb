@@ -1,20 +1,8 @@
-#include "web.h"
-#include <iostream>
-#include "initiator.h"
-#include <filesystem>
+﻿#include "service.h"
 
 int main()
 {
-    Web::Server app;
-    Web::ControllerRoutes routeConfig;
-
-    app.MapController(routeConfig);
-
-    if (!app.Run()) return 1;
-
-    std::cout << "Server running on https://localhost/\nPress Enter to exit.\n";
-    std::string temp;
-    std::getline(std::cin, temp);
-    app.Stop();
-    return 0;
+    const wchar_t* serviceName = L"SimpleWeb";
+    WindowsService service((LPWSTR)serviceName);
+    return service.Run() ? 0 : 1;
 }
