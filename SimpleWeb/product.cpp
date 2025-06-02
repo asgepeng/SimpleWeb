@@ -1,4 +1,5 @@
 #include "product.h"
+#include "layoutmanager.h"
 
 HttpResponse ProductController::Index()
 {
@@ -7,18 +8,14 @@ HttpResponse ProductController::Index()
     {
         return Redirect("/");
     }
-
-    Web::Mvc::Layout layout;
-    layout.styles = R"(<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Montserrat+Underline:ital,wght@0,100..900;1,100..900&family=Montserrat:ital,wght@0,100..900;1,100..900&family=Open+Sans:ital,wght@0,300..800;1,300..800&family=Roboto:ital,wght@0,100;0,300;0,400;0,500;0,700;0,900;1,100;1,300;1,400;1,500;1,700;1,900&display=swap" rel="stylesheet">)";
-
+    Response().Write(LayoutManager::layouts["main"]);
     if (db.Connect())
     {
-        layout.content = db.ExecuteHtmlTable("SELECT p.id, p.[name], p.[sku], c.[name] AS category, p.stock, p.unit, p.price, u.[name] AS [created by] FROM products AS p INNER JOIN categories AS c ON p.category = c.id INNER JOIN users AS u ON p.author = u.id WHERE p.deleted = 0");
+        Response().Write(db.ExecuteHtmlTable("SELECT p.id, p.[name], p.[sku], c.[name] AS category, p.stock, p.unit, p.price, u.[name] AS [created by] FROM products AS p INNER JOIN categories AS c ON p.category = c.id INNER JOIN users AS u ON p.author = u.id WHERE p.deleted = 0"));
         db.Disconnect();
     }
-    layout.scripts = R"(<script type="text/javascript">
+    Response().Write(R"(</main>
+<script type="text/javascript">
 document.addEventListener("DOMContentLoaded", function() {
     const rows = document.querySelectorAll('tr');
     rows.forEach(row => {
@@ -30,9 +27,26 @@ document.addEventListener("DOMContentLoaded", function() {
             }
         });
     });
+    const txtSearch = document.getElementById('search');
+    if (txtSearch) {
+        txtSearch.addEventListener('input', function (e) {
+            const text = txtSearch.value.toLowerCase();
+            const rows = document.querySelectorAll('tr');
+
+            rows.forEach(row => {
+                const cells = row.querySelectorAll('td');
+                if (cells.length > 1) {
+                    const nameText = cells[1].textContent.trim().toLowerCase();
+                    row.style.display = nameText.includes(text) ? '' : 'none';
+                }
+            });
+        });
+    }
 });
-</script>)";
-    return View(layout);
+</script>
+</body>
+</html>)");
+    return Response();
 }
 
 HttpResponse ProductController::Edit(int id)
@@ -86,4 +100,16 @@ HttpResponse ProductController::Edit(int id)
 
     layout.content = oss.str();
     return View(layout);
+}
+
+void ProductController::MapRoute(Router* router)
+{
+    router->MapGet("/products", [](Web::HttpContext& context) {
+        ProductController product(context);
+        return product.Index();
+        });
+    router->MapGet("/products/edit/{id}", [](Web::HttpContext& context) {
+        ProductController p(context);
+        return p.Edit(std::stoi(context.routeData.at("id")));
+        });
 }

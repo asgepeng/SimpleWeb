@@ -18,6 +18,7 @@ namespace Web::Mvc
 	struct Layout
 	{
 		std::string layoutName = "";
+		std::string head = "";
 		std::string styles = "";
 		std::string scripts = "";
 		std::string content = "";

@@ -1,51 +1,99 @@
 #define _CRT_SECURE_NO_WARNINGS
 
 #include "response.h"
-#include <sstream>
+#include <ctime>
+#include <string>
+#include <cstdio>
 
-namespace Web
-{
+namespace Web {
+
     HttpResponse::HttpResponse() :
         statusCode_(200),
         statusDescription_("OK"),
-        contentType_("text/html"),
-        Body("") { }
+        contentType_("text/html")
+    {
+    }
+
     void HttpResponse::SetHeader(const std::string& name, const std::string& value)
     {
-        headers_[name] = value;
+        headers_.insert_or_assign(name, value);
     }
+
     void HttpResponse::SetCookie(const std::string& name, const std::string& value, const std::chrono::system_clock::time_point& expired)
     {
         std::time_t exp_time_t = std::chrono::system_clock::to_time_t(expired);
-        std::tm tm = *std::gmtime(&exp_time_t);
+        char dateStr[64] = { 0 };
+        std::tm tmStruct;
+#if defined(_MSC_VER)
+        gmtime_s(&tmStruct, &exp_time_t);
+#else
+        gmtime_r(&exp_time_t, &tmStruct);
+#endif
+        std::strftime(dateStr, sizeof(dateStr), "%a, %d %b %Y %H:%M:%S GMT", &tmStruct);
 
-        std::ostringstream oss;
-        oss << std::put_time(&tm, "%a, %d %b %Y %H:%M:%S GMT");
+        std::string cookie;
+        cookie.reserve(128);
+        cookie.append(name).append("=").append(value)
+            .append("; Expires=").append(dateStr)
+            .append("; Path=/");
 
-        std::string cookie = name + "=" + value + "; Expires=" + oss.str() + "; Path=/";
-
-        headers_["Set-Cookie"] = cookie;
+        // Append if existing cookie(s), otherwise insert
+        auto it = headers_.find("Set-Cookie");
+        if (it != headers_.end()) {
+            it->second.append("\r\nSet-Cookie: ").append(cookie);
+        }
+        else 
+        {
+            headers_["Set-Cookie"] = cookie;
+        }
     }
+
     void HttpResponse::Redirect(const std::string& url)
     {
         statusCode_ = 302;
         statusDescription_ = "Found";
         SetHeader("Location", url);
     }
+
     void HttpResponse::Write(const std::string& content)
     {
-        Body += content;
+        Body.reserve(Body.size() + content.size()); // Avoid multiple reallocations
+        Body.append(content);
     }
+
     std::string HttpResponse::ToString() const
     {
-        std::ostringstream oss;
-        oss << "HTTP/1.1 " << statusCode_ << " " << statusDescription_ << "\r\n";
-        oss << "Content-Type: " << contentType_ << "\r\n";
-        for (const auto& [key, value] : headers_) {
-            oss << key << ": " << value << "\r\n";
+        size_t estimatedHeaderSize = 64 + contentType_.size() + statusDescription_.size();
+        for (const auto& header : headers_) {
+            estimatedHeaderSize += header.first.size() + header.second.size() + 4;
         }
-        oss << "Content-Length: " << Body.size() << "\r\n\r\n";
-        oss << Body;
-        return oss.str();
+
+        std::string response;
+        response.reserve(estimatedHeaderSize + Body.size());
+
+        response.append("HTTP/1.1 ")
+            .append(std::to_string(statusCode_))
+            .append(" ")
+            .append(statusDescription_)
+            .append("\r\n");
+
+        response.append("Content-Type: ")
+            .append(contentType_)
+            .append("\r\n");
+
+        for (const auto& header : headers_) {
+            response.append(header.first)
+                .append(": ")
+                .append(header.second)
+                .append("\r\n");
+        }
+
+        response.append("Content-Length: ")
+            .append(std::to_string(Body.size()))
+            .append("\r\n\r\n");
+
+        response.append(Body);
+        return response;
     }
+
 }

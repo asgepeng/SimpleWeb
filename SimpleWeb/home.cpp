@@ -1,6 +1,20 @@
 #include "home.h"
 #include "response.h"
 
+void HomeController::MapRoute(Router* router)
+{
+    router->MapGet("/home", [](Web::HttpContext& context) 
+        {
+            HomeController home(context);
+            return home.Index();
+        });
+    router->MapGet("/home/logout", [](Web::HttpContext& context)
+        {
+            HomeController home(context);
+            return home.Logout();
+        });
+}
+
 HttpResponse HomeController::Index()
 {
     auto view = GetView();
@@ -17,4 +31,10 @@ HttpResponse HomeController::Index()
 HttpResponse HomeController::Index(Web::FormCollection& form)
 {
     return Response();
+}
+
+HttpResponse HomeController::Logout()
+{
+    Response().SetHeader("Set-Cookie", "user-login=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax");
+    return Redirect("/");
 }

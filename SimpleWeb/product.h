@@ -9,6 +9,7 @@ public:
 	ProductController(Web::HttpContext& context) : Web::Mvc::Controller(context) { }
 	HttpResponse Index();
 	HttpResponse Edit(int id);
+	static void MapRoute(Router* router);
 private:
 	Data::DbClient db;
 };

@@ -34,10 +34,8 @@ VOID WINAPI WindowsService::ServiceMain(DWORD argc, LPTSTR* argv)
         return;
     }
 
-    // Inisialisasi struktur status
     ZeroMemory(&g_ServiceStatus, sizeof(g_ServiceStatus));
     g_ServiceStatus.dwServiceType = SERVICE_WIN32_OWN_PROCESS;
-    // Saat start pending, tidak menerima control apapun
     g_ServiceStatus.dwControlsAccepted = 0;
     g_ServiceStatus.dwCurrentState = SERVICE_START_PENDING;
     g_ServiceStatus.dwWin32ExitCode = 0;
@@ -103,8 +101,6 @@ VOID WINAPI WindowsService::ServiceCtrlHandler(DWORD ctrlCode)
 DWORD WINAPI WindowsService::ServiceWorkerThread(LPVOID lpParam)
 {
     WindowsService::StartServer();
-
-    // Tetap jaga agar thread tidak keluar sebelum event stop di-trigger
     while (WaitForSingleObject(g_ServiceStopEvent, 1000) != WAIT_OBJECT_0) 
     {
     }

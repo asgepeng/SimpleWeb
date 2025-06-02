@@ -43,7 +43,10 @@ HttpResponse& Web::Mvc::Controller::Redirect(const std::string& url)
 
 HttpResponse& Web::Mvc::Controller::View(Layout& layout)
 {
-    Response().Write(R"(<!DOCTYPE html>
+    if (layout.head != "") Response().Write(layout.head);
+    else
+    {
+        Response().Write(R"(<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -51,6 +54,7 @@ HttpResponse& Web::Mvc::Controller::View(Layout& layout)
     <title>Document</title>
     <link href="/assets/main.min.css" rel="stylesheet"/>
 </head>)");
+    }
     if (layout.styles != "") Response().Write(layout.styles);
     
     Response().Write(R"(<body>
