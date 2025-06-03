@@ -1,6 +1,11 @@
+#include "crypto.h"
 #include "login.h"
 #include "sqlhelper.h"
 
+#include <chrono>
+#include <ctime>
+
+using namespace std::chrono;
 void LoginController::MapRoute(Router* router)
 {
 	router->MapGet("/", [](Web::HttpContext& context) {
@@ -16,7 +21,8 @@ void LoginController::MapRoute(Router* router)
 
 HttpResponse LoginController::Index()
 {
-	auto userID = Request().getCookie("user-login");
+	auto userID = Request().GetCookie("user-login");
+
 	if (userID != "")
 	{
 		return Redirect("/products");
@@ -53,6 +59,7 @@ HttpResponse LoginController::Index()
 
 HttpResponse LoginController::Index(Web::FormCollection& form)
 {
+
 	std::string username = form["username"];
 	std::string password = form["txtpassword"];
 
@@ -74,7 +81,9 @@ HttpResponse LoginController::Index(Web::FormCollection& form)
 
 	if (id > 0)
 	{
-		Response().SetHeader("Set-Cookie", "user-login=" + std::to_string(id));
+		auto tp = system_clock::now() + hours(1);
+		std::string session = Security::Encryption::AESEncrypt(std::to_string(id));
+		Response().SetCookie("user-login", session, tp);
 		return Redirect("/products");
 	}
 	else

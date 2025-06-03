@@ -72,17 +72,17 @@ namespace Web
         }
         body = bodyStream.str();
     }
-    std::string HttpRequest::getHeader(const std::string& name) const
+    std::string HttpRequest::GetHeader(const std::string& name) const
     {
         auto it = headers.find(name);
         return (it != headers.end()) ? it->second : "";
     }
-    std::string HttpRequest::getCookie(const std::string& name) const
+    std::string HttpRequest::GetCookie(const std::string& name) const
     {
         auto it = cookies.find(name);
         return (it != cookies.end()) ? it->second : "";
     }
-    std::string HttpRequest::getQueryParam(const std::string& name) const
+    std::string HttpRequest::GetQueryParam(const std::string& name) const
     {
         auto it = queryParams.find(name);
         return (it != queryParams.end()) ? it->second : "";

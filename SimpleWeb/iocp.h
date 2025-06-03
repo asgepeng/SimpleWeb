@@ -1,4 +1,5 @@
 #pragma once
+#include "initiator.h"
 #include "sslcm.h"
 #include "sslconn.h"
 #include "wthreadpool.h"
@@ -19,9 +20,9 @@ namespace Web
         bool Initialize(const std::string& certFile, const std::string& keyFile, int port);
         void Run();
         void Stop();
+        void MapController(ControllerRoutes rounteConfig);
 
     private:
-        static DWORD WINAPI WorkerThread(LPVOID lpParam);
         void AcceptLoop();
 
         SOCKET listenSocket;
@@ -29,7 +30,7 @@ namespace Web
         bool running = false;
 
         SSLContextManager sslManager;
-        ConnectionManager connManager;
+        //ConnectionManager connManager;
         WorkerThreadPool threadPool;
         RequestRouter router;
         Logger logger;

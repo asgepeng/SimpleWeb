@@ -3,6 +3,7 @@
 #include <string>
 #include <mutex>
 #include <optional>
+#include <iostream>
 
 class Configuration
 {
@@ -14,6 +15,14 @@ public:
     static double GetDouble(const std::string& key, double defaultValue = 0.0);
     static bool Contains(const std::string& key);
     static bool LoadFromFile(const std::string& filePath);
+    static void Print()
+    {
+        std::lock_guard<std::mutex> lock(settingsMutex);
+        for (const auto& pair : settings)
+        {
+            std::cout << pair.first << ": " << pair.second << std::endl;
+        }
+    }
 private:
     static std::unordered_map<std::string, std::string> settings;
     static std::mutex settingsMutex;

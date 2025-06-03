@@ -3,7 +3,7 @@
 
 HttpResponse ProductController::Index()
 {
-    auto userId = Request().getCookie("user-login");
+    auto userId = Request().GetCookie("user-login");
     if (userId == "")
     {
         return Redirect("/");
@@ -15,35 +15,7 @@ HttpResponse ProductController::Index()
         db.Disconnect();
     }
     Response().Write(R"(</main>
-<script type="text/javascript">
-document.addEventListener("DOMContentLoaded", function() {
-    const rows = document.querySelectorAll('tr');
-    rows.forEach(row => {
-        row.addEventListener('click', function() {
-            const firstCell = row.querySelector('td');
-            if (firstCell) {
-                const id = firstCell.textContent.trim();
-                location.href = "/products/edit/" + encodeURIComponent(id);
-            }
-        });
-    });
-    const txtSearch = document.getElementById('search');
-    if (txtSearch) {
-        txtSearch.addEventListener('input', function (e) {
-            const text = txtSearch.value.toLowerCase();
-            const rows = document.querySelectorAll('tr');
-
-            rows.forEach(row => {
-                const cells = row.querySelectorAll('td');
-                if (cells.length > 1) {
-                    const nameText = cells[1].textContent.trim().toLowerCase();
-                    row.style.display = nameText.includes(text) ? '' : 'none';
-                }
-            });
-        });
-    }
-});
-</script>
+<script type="text/javascript" src="/scripts/main.min.js"></script>
 </body>
 </html>)");
     return Response();
@@ -100,6 +72,26 @@ HttpResponse ProductController::Edit(int id)
 
     layout.content = oss.str();
     return View(layout);
+}
+
+HttpResponse ProductController::Edit(FormCollection form)
+{
+    return HttpResponse();
+}
+
+HttpResponse ProductController::Add()
+{
+    return HttpResponse();
+}
+
+HttpResponse ProductController::Delete()
+{
+    return HttpResponse();
+}
+
+HttpResponse ProductController::Delete(int id)
+{
+    return HttpResponse();
 }
 
 void ProductController::MapRoute(Router* router)

@@ -22,7 +22,9 @@
     <ClInclude Include="action.h" />
     <ClInclude Include="appconfig.h" />
     <ClInclude Include="controllers.h" />
+    <ClInclude Include="crypto.h" />
     <ClInclude Include="db.h" />
+    <ClInclude Include="dbinitializer.h" />
     <ClInclude Include="dbreader.h" />
     <ClInclude Include="home.h" />
     <ClInclude Include="httpcontext.h" />
@@ -52,7 +54,9 @@
   <ItemGroup>
     <ClCompile Include="action.cpp" />
     <ClCompile Include="appconfig.cpp" />
+    <ClCompile Include="crypto.cpp" />
     <ClCompile Include="db.cpp" />
+    <ClCompile Include="dbinitializer.cpp" />
     <ClCompile Include="dbreader.cpp" />
     <ClCompile Include="home.cpp" />
     <ClCompile Include="httpcontext.cpp" />

@@ -35,17 +35,10 @@ namespace Web {
         cookie.reserve(128);
         cookie.append(name).append("=").append(value)
             .append("; Expires=").append(dateStr)
-            .append("; Path=/");
+            .append("; Path=/")
+            .append("; HttpOnly");
 
-        // Append if existing cookie(s), otherwise insert
-        auto it = headers_.find("Set-Cookie");
-        if (it != headers_.end()) {
-            it->second.append("\r\nSet-Cookie: ").append(cookie);
-        }
-        else 
-        {
-            headers_["Set-Cookie"] = cookie;
-        }
+        cookies.push_back(cookie);
     }
 
     void HttpResponse::Redirect(const std::string& url)
@@ -87,7 +80,11 @@ namespace Web {
                 .append(header.second)
                 .append("\r\n");
         }
-
+        for (const auto& cookie : cookies)
+        {
+            response.append("Set-Cookie: ")
+                .append(cookie);
+        }
         response.append("Content-Length: ")
             .append(std::to_string(Body.size()))
             .append("\r\n\r\n");

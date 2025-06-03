@@ -64,6 +64,31 @@ namespace Web
         return true;
     }
 
+    std::string StaticFileHandler::Serve(std::string& filePath)
+    {
+        std::filesystem::path fullPath = ConvertToPathWindows(filePath);
+
+        if (!std::filesystem::exists(fullPath) || std::filesystem::is_directory(fullPath))
+            return "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";
+
+        std::ifstream file(fullPath, std::ios::binary);
+        if (!file)
+            return "HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\n\r\n";
+
+        std::ostringstream content;
+        content << file.rdbuf();
+        std::string body = content.str();
+
+        std::ostringstream response;
+        response << "HTTP/1.1 200 OK\r\n";
+        response << "Content-Length: " << body.size() << "\r\n";
+        response << "Content-Type: " << GetContentType(filePath) << "\r\n";
+        response << "\r\n";
+        response << body;
+
+        return response.str();
+    }
+
     void StaticFileHandler::SendFile(SOCKET clientSocket, const std::string& filePath)
     {
         std::ifstream file(filePath, std::ios::binary | std::ios::ate);
@@ -115,9 +140,71 @@ namespace Web
 
         const int BUFFER_SIZE = 8192;
         char buffer[BUFFER_SIZE];
-        while (file.read(buffer, BUFFER_SIZE) || file.gcount() > 0) {
+        while (file.read(buffer, BUFFER_SIZE) || file.gcount() > 0) 
+        {
             SSL_write(ssl, buffer, static_cast<int>(file.gcount()));
         }
+    }
+    void StaticFileHandler::SendFile(Connection* conn, Connection::IOData* pIoData, const std::string& filePath)
+    {
+        std::ifstream file(filePath, std::ios::binary);
+        if (!file)
+        {
+            std::cerr << "File tidak ditemukan: " << filePath << std::endl;
+            conn->Cleanup();
+            delete conn;
+            return;
+        }
+
+        const size_t chunkSize = 4096;
+        char buffer[chunkSize];
+
+        while (file)
+        {
+            file.read(buffer, chunkSize);
+            std::streamsize bytesRead = file.gcount();
+
+            if (bytesRead > 0)
+            {
+                auto written = SSL_write(conn->GetSSL(), buffer, static_cast<int>(bytesRead));
+                if (written <= 0) break;
+
+                auto pending = BIO_ctrl_pending(SSL_get_wbio(conn->GetSSL()));
+                while (pending > 0)
+                {
+                    char outBuffer[4096];
+                    int bytesOut = BIO_read(SSL_get_wbio(conn->GetSSL()), outBuffer, sizeof(outBuffer));
+                    if (bytesOut > 0)
+                    {
+                        WSABUF sendBuf;
+                        sendBuf.buf = outBuffer;
+                        sendBuf.len = bytesOut;
+
+                        ZeroMemory(&pIoData->overlapped, sizeof(OVERLAPPED));
+                        pIoData->operation = Connection::OP_WRITE;
+                        memcpy(pIoData->buffer, outBuffer, bytesOut);
+                        pIoData->wsaBuf.buf = pIoData->buffer;
+                        pIoData->wsaBuf.len = bytesOut;
+
+                        DWORD sent = 0;
+                        int ret = WSASend(conn->GetSocket(), &pIoData->wsaBuf, 1, &sent, 0, &pIoData->overlapped, NULL);
+                        if (ret == SOCKET_ERROR && WSAGetLastError() != WSA_IO_PENDING)
+                        {
+                            std::cerr << "WSASend error." << std::endl;
+                            delete pIoData;
+                            conn->Cleanup();
+                            delete conn;
+                            return;
+                        }
+                    }
+
+                    pending = BIO_ctrl_pending(SSL_get_wbio(conn->GetSSL()));
+                }
+            }
+        }
+
+        file.close();
+
     }
     bool StaticFileHandler::IsFileRequest(const std::string& url)
     {

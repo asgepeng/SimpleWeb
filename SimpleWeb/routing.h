@@ -27,6 +27,11 @@ namespace Web
     {
     public:
         using Handler = std::function<HttpResponse(HttpContext&)>;
+        static Web::Router& Instance()
+        {
+            static Router router;
+            return router;
+        }
         HttpResponse Handle(Web::HttpRequest& request);
 
         void MapGet(const std::string& pattern, Handler handler);

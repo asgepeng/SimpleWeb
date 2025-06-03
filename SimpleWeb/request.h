@@ -18,10 +18,19 @@ namespace Web
         std::unordered_map<std::string, std::string> queryParams;
         std::string body;
 
-        std::string getHeader(const std::string& name) const;
-        std::string getCookie(const std::string& name) const;
-        std::string getQueryParam(const std::string& name) const;
+        std::string GetHeader(const std::string& name) const;
+        std::string GetCookie(const std::string& name) const;
+        std::string GetQueryParam(const std::string& name) const;
+
 		FormCollection getFormCollection() const;
+
+        bool IsFileRequest()
+        {
+            size_t dot = url.find_last_of('.');
+            size_t slash = url.find_last_of('/');
+            return dot != std::string::npos && (slash == std::string::npos || dot > slash);
+        }
+
     private:
 		static void trim(std::string& s);
         void parseQueryString(const std::string& query);

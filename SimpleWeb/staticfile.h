@@ -1,7 +1,7 @@
 #pragma once
 
 #include "request.h"
-#include <openssl/ssl.h>
+#include "sslconn.h"
 
 namespace Web
 {
@@ -10,12 +10,14 @@ namespace Web
     public:
         static bool TryHandleRequest(const HttpRequest& request, SOCKET clientSocket);
         static bool TryHandleRequest(const HttpRequest& request, SSL* ssl);
+        static std::string Serve(std::string& filePath);
     private:
         static std::string ConvertToPathWindows(const std::string& url);
         static std::string GetContentType(const std::string& path);
         static bool IsFileRequest(const std::string& url);
         static void SendFile(SOCKET clientSocket, const std::string& filePath);
         static void SendFile(SSL* ssl, const std::string& filePath);
+        static void SendFile(Connection* conn, Connection::IOData* pIoData, const std::string& filePath);
     };
 }
 

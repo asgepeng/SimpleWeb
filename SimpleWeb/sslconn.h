@@ -3,6 +3,7 @@
 #include <openssl/ssl.h>
 #include <mutex>
 #include <unordered_set>
+#include <string>
 
 namespace Web
 {
@@ -12,13 +13,16 @@ namespace Web
         ~Connection();
 
         bool StartHandshake(HANDLE hIOCP);
+        bool HandshakeFinished();
+        bool Accept(int& sslError);
         void Cleanup();
-        bool PostReceive();
+        std::string GetIPAddress();
 
         SOCKET GetSocket() const { return socket; }
         SSL* GetSSL() const { return ssl; }
 
-        struct PER_IO_DATA {
+        struct IOData 
+        {
             OVERLAPPED overlapped;
             WSABUF wsaBuf;
             char buffer[4096];

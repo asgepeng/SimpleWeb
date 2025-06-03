@@ -24,6 +24,7 @@ namespace Web
         std::string ContentType() { return contentType_; }
     private:
         std::unordered_map<std::string, std::string> headers_;
+        std::vector<std::string> cookies;
         int statusCode_;
         std::string statusDescription_;
         std::string contentType_;

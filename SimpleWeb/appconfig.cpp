@@ -54,6 +54,18 @@ bool Configuration::Contains(const std::string& key)
     std::lock_guard<std::mutex> lock(settingsMutex);
     return settings.find(key) != settings.end();
 }
+static inline std::string trim(const std::string& s)
+{
+    size_t start = 0;
+    while (start < s.size() && std::isspace((unsigned char)s[start])) ++start;
+
+    if (start == s.size()) return "";
+
+    size_t end = s.size() - 1;
+    while (end > start && std::isspace((unsigned char)s[end])) --end;
+
+    return s.substr(start, end - start + 1);
+}
 
 bool Configuration::LoadFromFile(const std::string& filePath)
 {
@@ -63,13 +75,14 @@ bool Configuration::LoadFromFile(const std::string& filePath)
     std::string line;
     while (std::getline(file, line))
     {
+        line = trim(line);
         if (line.empty() || line[0] == '#') continue;
 
         size_t eqPos = line.find('=');
         if (eqPos != std::string::npos)
         {
-            std::string key = line.substr(0, eqPos);
-            std::string value = line.substr(eqPos + 1);
+            std::string key = trim(line.substr(0, eqPos));
+            std::string value = trim(line.substr(eqPos + 1));
             Set(key, value);
         }
     }
