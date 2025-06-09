@@ -145,67 +145,6 @@ namespace Web
             SSL_write(ssl, buffer, static_cast<int>(file.gcount()));
         }
     }
-    void StaticFileHandler::SendFile(Connection* conn, Connection::IOData* pIoData, const std::string& filePath)
-    {
-        std::ifstream file(filePath, std::ios::binary);
-        if (!file)
-        {
-            std::cerr << "File tidak ditemukan: " << filePath << std::endl;
-            conn->Cleanup();
-            delete conn;
-            return;
-        }
-
-        const size_t chunkSize = 4096;
-        char buffer[chunkSize];
-
-        while (file)
-        {
-            file.read(buffer, chunkSize);
-            std::streamsize bytesRead = file.gcount();
-
-            if (bytesRead > 0)
-            {
-                auto written = SSL_write(conn->GetSSL(), buffer, static_cast<int>(bytesRead));
-                if (written <= 0) break;
-
-                auto pending = BIO_ctrl_pending(SSL_get_wbio(conn->GetSSL()));
-                while (pending > 0)
-                {
-                    char outBuffer[4096];
-                    int bytesOut = BIO_read(SSL_get_wbio(conn->GetSSL()), outBuffer, sizeof(outBuffer));
-                    if (bytesOut > 0)
-                    {
-                        WSABUF sendBuf;
-                        sendBuf.buf = outBuffer;
-                        sendBuf.len = bytesOut;
-
-                        ZeroMemory(&pIoData->overlapped, sizeof(OVERLAPPED));
-                        pIoData->operation = Connection::OP_WRITE;
-                        memcpy(pIoData->buffer, outBuffer, bytesOut);
-                        pIoData->wsaBuf.buf = pIoData->buffer;
-                        pIoData->wsaBuf.len = bytesOut;
-
-                        DWORD sent = 0;
-                        int ret = WSASend(conn->GetSocket(), &pIoData->wsaBuf, 1, &sent, 0, &pIoData->overlapped, NULL);
-                        if (ret == SOCKET_ERROR && WSAGetLastError() != WSA_IO_PENDING)
-                        {
-                            std::cerr << "WSASend error." << std::endl;
-                            delete pIoData;
-                            conn->Cleanup();
-                            delete conn;
-                            return;
-                        }
-                    }
-
-                    pending = BIO_ctrl_pending(SSL_get_wbio(conn->GetSSL()));
-                }
-            }
-        }
-
-        file.close();
-
-    }
     bool StaticFileHandler::IsFileRequest(const std::string& url)
     {
         size_t dot = url.find_last_of('.');

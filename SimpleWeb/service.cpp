@@ -1,6 +1,5 @@
 #pragma once
 #include "initiator.h"
-#include "web.h"
 #include "service.h"
 #include <strsafe.h>
 #include <string>
@@ -114,9 +113,9 @@ void WindowsService::StartServer()
     g_Server = new Web::Server();
 
     Web::ControllerRoutes routes;
-    g_Server->MapController(routes);
+    g_Server->MapControllers(&routes);
 
-    if (!g_Server->Run()) 
+    if (!g_Server->Start()) 
     {
         SetEvent(g_ServiceStopEvent);
     }

@@ -1,6 +1,7 @@
 #pragma once
 #include <string>
 #include <functional>
+#define NOMINMAX
 #include <windows.h>
 #include <sqlext.h>
 #include <sstream>

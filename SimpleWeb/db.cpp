@@ -1,5 +1,6 @@
 #include "db.h"
 #include <iostream>
+
 namespace Data
 {
     std::string JsonEscape(const std::string& raw)
@@ -262,6 +263,184 @@ namespace Data
 
         SQLFreeHandle(SQL_HANDLE_STMT, hStmt);
         return success;
+    }
+    bool DbClient::ExecuteNonQuery(const std::string& command, std::vector<DbParameter>& parameters)
+    {
+        SQLHSTMT hStmt;
+        if (!SQL_SUCCEEDED(SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt))) {
+            std::cerr << "[ODBC ERROR] SQLAllocHandle failed.\n";
+            return false;
+        }
+
+        if (!SQL_SUCCEEDED(SQLPrepareA(hStmt, (SQLCHAR*)command.c_str(), SQL_NTS))) {
+            std::cerr << "[ODBC ERROR] SQLPrepare failed:\n";
+            SQLCHAR sqlState[6], message[512];
+            SQLINTEGER nativeError;
+            SQLSMALLINT msgLen;
+            SQLSMALLINT i = 1;
+            while (SQLGetDiagRecA(SQL_HANDLE_STMT, hStmt, i, sqlState, &nativeError, message, sizeof(message), &msgLen) == SQL_SUCCESS)
+            {
+                std::cerr << "  #" << i << " SQLSTATE: " << sqlState
+                    << ", Native Error: " << nativeError
+                    << ", Message: " << message << "\n";
+                ++i;
+            }
+
+            SQLFreeHandle(SQL_HANDLE_STMT, hStmt);
+            return false;
+        }
+
+        std::vector<SQLLEN> indicators(parameters.size());
+
+        for (size_t i = 0; i < parameters.size(); ++i)
+        {
+            const DbParameter& p = parameters[i];
+
+            bool bindSuccess = std::visit([&](auto&& val) -> bool {
+                using T = std::decay_t<decltype(val)>;
+                SQLPOINTER buffer = nullptr;
+                SQLULEN columnSize = 0;
+                SQLLEN& indicator = indicators[i];
+
+                if constexpr (std::is_same_v<T, std::string>) {
+                    buffer = (SQLPOINTER)val.c_str();
+
+                    if (p.columnSize > 0) {
+                        columnSize = p.columnSize;
+                    }
+                    else {
+                        columnSize = static_cast<SQLULEN>(val.size() > 0 ? val.size() : 1);
+                    }
+
+                    indicator = static_cast<SQLLEN>(val.size());
+
+                    return SQL_SUCCEEDED(SQLBindParameter(
+                        hStmt,
+                        static_cast<SQLUSMALLINT>(i + 1),
+                        SQL_PARAM_INPUT,
+                        p.cType,
+                        p.sqlType,
+                        columnSize,
+                        0,
+                        buffer,
+                        0,
+                        &indicator
+                    ));
+                }
+                else {
+                    buffer = (SQLPOINTER)&val;
+                    indicator = sizeof(T);
+
+                    return SQL_SUCCEEDED(SQLBindParameter(
+                        hStmt,
+                        static_cast<SQLUSMALLINT>(i + 1),
+                        SQL_PARAM_INPUT,
+                        p.cType,
+                        p.sqlType,
+                        0,
+                        0,
+                        buffer,
+                        0,
+                        &indicator
+                    ));
+                }
+                }, p.value);
+
+            if (!bindSuccess) {
+                std::cerr << "[ODBC ERROR] SQLBindParameter failed at index " << i + 1 << "\n";
+
+                SQLCHAR sqlState[6];
+                SQLCHAR message[512];
+                SQLINTEGER nativeError;
+                SQLSMALLINT msgLen;
+                SQLSMALLINT j = 1;
+                while (SQLGetDiagRecA(SQL_HANDLE_STMT, hStmt, j, sqlState, &nativeError, message, sizeof(message), &msgLen) == SQL_SUCCESS)
+                {
+                    std::cerr << "  [Bind Error #" << j << "] SQLSTATE: " << sqlState
+                        << ", Native Error: " << nativeError
+                        << ", Message: " << message << "\n";
+                    ++j;
+                }
+
+                SQLFreeHandle(SQL_HANDLE_STMT, hStmt);
+                return false;
+            }
+        }
+
+        bool execResult = SQL_SUCCEEDED(SQLExecute(hStmt));
+        if (!execResult)
+        {
+            std::cerr << "[ODBC ERROR] SQLExecute failed:\n";
+            SQLCHAR sqlState[6];
+            SQLCHAR message[512];
+            SQLINTEGER nativeError;
+            SQLSMALLINT msgLen;
+            SQLSMALLINT i = 1;
+
+            while (SQLGetDiagRecA(SQL_HANDLE_STMT, hStmt, i, sqlState, &nativeError, message, sizeof(message), &msgLen) == SQL_SUCCESS)
+            {
+                std::cerr << "  #" << i
+                    << " SQLSTATE: " << sqlState
+                    << ", Native Error: " << nativeError
+                    << ", Message: " << message << "\n";
+                ++i;
+            }
+        }
+
+        SQLFreeHandle(SQL_HANDLE_STMT, hStmt);
+        return execResult;
+    }
+    bool DbClient::ExecuteLongText(const std::string& command, std::string& longText)
+    {
+        SQLHSTMT hStmt;
+        SQLRETURN ret;
+
+        // Allocate statement handle
+        ret = SQLAllocHandle(SQL_HANDLE_STMT, hDbc, &hStmt);
+        if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
+            std::cerr << "Failed to allocate statement handle.\n";
+            return false;
+        }
+
+        // Prepare the SQL statement (assume there's a ? placeholder for the text)
+        ret = SQLPrepareA(hStmt, (SQLCHAR*)command.c_str(), SQL_NTS);
+        if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
+            std::cerr << "SQLPrepare failed.\n";
+            SQLFreeHandle(SQL_HANDLE_STMT, hStmt);
+            return false;
+        }
+
+        // Bind the long text parameter
+        SQLLEN cbTextLen = SQL_NTS; // SQL_NTS = null-terminated string
+        ret = SQLBindParameter(
+            hStmt,           // Statement handle
+            1,               // Parameter number (1-based)
+            SQL_PARAM_INPUT, // Input parameter
+            SQL_C_CHAR,      // C type
+            SQL_LONGVARCHAR, // SQL type for long text
+            longText.length(), // Column size
+            0,               // Decimal digits
+            (SQLPOINTER)longText.c_str(), // Parameter value
+            0,               // Buffer length (not needed for SQL_NTS)
+            &cbTextLen       // Length/indicator
+        );
+        if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
+            std::cerr << "SQLBindParameter failed.\n";
+            SQLFreeHandle(SQL_HANDLE_STMT, hStmt);
+            return false;
+        }
+
+        // Execute the statement
+        ret = SQLExecute(hStmt);
+        if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
+            std::cerr << "SQLExecute failed.\n";
+            SQLFreeHandle(SQL_HANDLE_STMT, hStmt);
+            return false;
+        }
+
+        // Clean up
+        SQLFreeHandle(SQL_HANDLE_STMT, hStmt);
+        return true;
     }
     int DbClient::ExecuteScalarInt(const std::string& query)
     {

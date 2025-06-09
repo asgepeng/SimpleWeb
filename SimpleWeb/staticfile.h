@@ -1,7 +1,7 @@
 #pragma once
 
 #include "request.h"
-#include "sslconn.h"
+#include <openssl/ssl.h>
 
 namespace Web
 {
@@ -17,7 +17,6 @@ namespace Web
         static bool IsFileRequest(const std::string& url);
         static void SendFile(SOCKET clientSocket, const std::string& filePath);
         static void SendFile(SSL* ssl, const std::string& filePath);
-        static void SendFile(Connection* conn, Connection::IOData* pIoData, const std::string& filePath);
     };
 }
 

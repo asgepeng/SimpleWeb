@@ -84,11 +84,25 @@ namespace Data
     }
     std::string DbReader::GetString(short columnIndex)
     {
-        char buffer[1024] = {};
-        SQLLEN len = 0;
+        std::string result;
+        char buffer[1024];
+        SQLLEN indicator = 0;
 
-        SQLRETURN ret = SQLGetData(SqlStatement, columnIndex, SQL_C_CHAR, buffer, sizeof(buffer), &len);
-        return SQL_SUCCEEDED(ret) && len != SQL_NULL_DATA ? std::string(buffer) : "";
+        while (true)
+        {
+            SQLRETURN ret = SQLGetData(SqlStatement, columnIndex, SQL_C_CHAR, buffer, sizeof(buffer), &indicator);
+
+            if (!SQL_SUCCEEDED(ret) || indicator == SQL_NULL_DATA)
+                break;
+
+            if (indicator == SQL_NO_TOTAL || indicator > 0)
+                result.append(buffer);
+
+            if (ret == SQL_SUCCESS)
+                break; // selesai
+        }
+
+        return result;
     }
     std::vector<uint8_t> DbReader::GetStream(const SQLSMALLINT ordinal)
     {

@@ -66,8 +66,6 @@ namespace Web
     {
         for (auto& route : routes)
         {
-            std::cout << route.method << " vs " << request.method << std::endl;
-            std::cout << request.url << std::endl;
             if (route.method == request.method)
             {
                 std::unordered_map<std::string, std::string> routeValues;

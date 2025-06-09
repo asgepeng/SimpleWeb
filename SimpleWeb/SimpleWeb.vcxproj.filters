@@ -27,9 +27,6 @@
     <ClInclude Include="mvc.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="web.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="home.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -66,9 +63,6 @@
     <ClInclude Include="initiator.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="threadpool.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="identity.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -79,24 +73,6 @@
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="service.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="iocp.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="sslcm.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="sslconn.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="wthreadpool.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="reqrouter.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="logger.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="smtp.h">
@@ -111,6 +87,18 @@
     <ClInclude Include="crypto.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="server.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="pages.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="dbconnpool.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="dynamicform.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="appconfig.cpp">
@@ -123,9 +111,6 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="mvc.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="web.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="home.cpp">
@@ -158,9 +143,6 @@
     <ClCompile Include="action.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="threadpool.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="identity.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -173,24 +155,6 @@
     <ClCompile Include="service.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="iocp.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="sslcm.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="sslconn.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="wthreadpool.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="reqrouter.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
-    <ClCompile Include="logger.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="smtp.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -201,6 +165,18 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="crypto.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="server.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="pages.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dbconnpool.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="dynamicform.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

@@ -9,10 +9,15 @@ namespace Web
 	class FormCollection : public std::map<std::string, std::string> { };
     class HttpRequest {
     public:
-        HttpRequest(const char* rawRequest);
+        HttpRequest(const std::string& raw);
         std::string method;
         std::string url;
         std::string httpVersion;
+        std::string connection;
+        int contentLength = 0;
+        std::string contentType;
+        std::string origin;
+
         std::unordered_map<std::string, std::string> headers;
         std::unordered_map<std::string, std::string> cookies;
         std::unordered_map<std::string, std::string> queryParams;

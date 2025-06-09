@@ -22,9 +22,9 @@ namespace Web
         return result;
     }
 
-    HttpRequest::HttpRequest(const char* rawRequest)
+    HttpRequest::HttpRequest(const std::string& raw)
     {
-        std::istringstream stream(rawRequest);
+        std::istringstream stream(raw);
         std::string line;
         if (std::getline(stream, line))
         {
@@ -56,11 +56,26 @@ namespace Web
                 std::string value = line.substr(colon + 1);
                 trim(key);
                 trim(value);
-                headers[key] = value;
 
                 if (key == "Cookie")
                 {
                     parseCookies(value);
+                }
+                else if (key == "Content-Type")
+                {
+                    contentType = value;
+                }
+                else if (key == "Content-Length")
+                {
+                    contentLength = std::stoi(value);
+                }
+                else if (key == "Connection")
+                {
+                    connection = value;
+                }
+                else
+                {
+                    headers[key] = value;
                 }
             }
         }
