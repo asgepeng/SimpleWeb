@@ -102,12 +102,13 @@ namespace Web
         bool InitializeSsl();
         void Shutdown();
         void WorkerThread();
-        void WorkerThreadSSL();
+        void WorkerThreadSsl();
         bool PostAccept();
         void PostReceive(IOContext* ctx);
         void PrepareHandshake(IOContext* ctx, int sslError);
         void SendPendingBIO(IOContext* ctx);
         void CleanupSocket(SOCKET s);
+        void CleanupContext(IOContext* ctx);
         void DisconnectClient(SOCKET s);
         void HandleRequest(Web::HttpRequest& request, std::string& response);
     };
