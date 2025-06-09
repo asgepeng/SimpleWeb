@@ -13,7 +13,7 @@ int main()
     Web::Server server;
     ControllerRoutes routeConfig;
 
-    server.UseSSL(false);
+    server.UseSSL(true);
     server.MapControllers(&routeConfig);
 
     if (!server.Start())

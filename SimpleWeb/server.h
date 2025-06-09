@@ -18,7 +18,7 @@ namespace Web
 {
     constexpr size_t MAX_REQUEST_SIZE = 16 * 1024;
     // Operation enum
-    enum class Operation { Accept, Receive, Send };
+    enum class Operation { Accept, Handshake, Receive, Send };
 
     // Context struct for each I/O operation
     struct IOContext
@@ -33,6 +33,7 @@ namespace Web
         std::chrono::steady_clock::time_point lastActive;
 
         std::string data = "";
+        size_t lastSentPlaintext = 0;
         size_t dataTransfered = 0;
 
         Web::HttpRequest* request = nullptr;
@@ -104,6 +105,7 @@ namespace Web
         void WorkerThreadSSL();
         bool PostAccept();
         void PostReceive(IOContext* ctx);
+        void PrepareHandshake(IOContext* ctx, int sslError);
         void SendPendingBIO(IOContext* ctx);
         void CleanupSocket(SOCKET s);
         void DisconnectClient(SOCKET s);
