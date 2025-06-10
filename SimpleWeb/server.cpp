@@ -6,6 +6,9 @@
 #include <openssl/err.h>
 #include <exception>
 
+#pragma comment(lib, "libssl.lib")
+#pragma comment(lib, "libcrypto.lib")
+
 namespace Web
 {
     bool Server::InitializeSsl()
@@ -21,39 +24,44 @@ namespace Web
         if (!sslContext)
         {
             ERR_print_errors_fp(stderr);
+            CleanupSslContext();
             return false;
         }
 
         if (SSL_CTX_use_certificate_file(sslContext, certPath.c_str(), SSL_FILETYPE_PEM) <= 0)
         {
             ERR_print_errors_fp(stderr);
+            CleanupSslContext();
             return false;
         }
 
         if (SSL_CTX_use_PrivateKey_file(sslContext, keyPath.c_str(), SSL_FILETYPE_PEM) <= 0)
         {
             ERR_print_errors_fp(stderr);
+            CleanupSslContext();
             return false;
         }
 
         if (!SSL_CTX_check_private_key(sslContext))
         {
             std::cerr << "Private key does not match the public certificate\n";
+            CleanupSslContext();
             return false;
         }
 
-        std::cout << "ssl successfully initialized";
+        std::cout << "ssl successfully initialized" << std::endl;
         return true;
     }
     bool Server::Start()
     {
         if (useSSL)
         {
+            port = 443;
             if (!InitializeSsl())
             {
+                CleanupSslContext();
                 return false;
             }
-            port = 443;
         }
         else
         {
@@ -64,12 +72,14 @@ namespace Web
         int res = WSAStartup(MAKEWORD(2, 2), &wsaData);
         if (res != 0)
         {
+            CleanupSslContext();
             return false;
         }
 
         listenerSocket = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, NULL, 0, WSA_FLAG_OVERLAPPED);
         if (listenerSocket == INVALID_SOCKET)
         {
+            CleanupSslContext();
             WSACleanup();
             return false;
         }
@@ -82,6 +92,7 @@ namespace Web
         if (bind(listenerSocket, (sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR)
         {
             closesocket(listenerSocket);
+            CleanupSslContext();
             WSACleanup();
             return false;
         }
@@ -89,6 +100,7 @@ namespace Web
         if (listen(listenerSocket, SOMAXCONN) == SOCKET_ERROR)
         {
             closesocket(listenerSocket);
+            CleanupSslContext();
             WSACleanup();
             return false;
         }
@@ -98,6 +110,7 @@ namespace Web
         if (!hIOCP)
         {
             closesocket(listenerSocket);
+            CleanupSslContext();
             WSACleanup();
             return false;
         }
@@ -107,6 +120,7 @@ namespace Web
         if (!assoc)
         {
             closesocket(listenerSocket);
+
             CloseHandle(hIOCP);
             WSACleanup();
             return false;
@@ -148,27 +162,23 @@ namespace Web
         // Post initial AcceptEx
         for (int i = 0; i < threadCount * 2; i++)
         { // multiple accepts pending
-            if (!PostAccept()) {
+            if (!PostAccept()) 
+            {
                 Stop();
                 return false;
             }
         }
-
         return true;
     }
     void Server::Stop()
     {
         if (!running) return;
         running = false;
-
-        // 1. Stop listening
         if (listenerSocket != INVALID_SOCKET)
         {
             closesocket(listenerSocket);
             listenerSocket = INVALID_SOCKET;
         }
-
-        // 2. Shutdown all active client connections
         {
             std::lock_guard<std::mutex> lock(clientsMutex);
             for (SOCKET s : clients)
@@ -181,36 +191,21 @@ namespace Web
             }
             clients.clear();
         }
-
-        // 3. Wake up all worker threads
         for (size_t i = 0; i < workerThreads.size(); i++)
         {
             PostQueuedCompletionStatus(hIOCP, 0, 0, nullptr);
         }
-
-        // 4. Wait all worker threads
         for (auto& th : workerThreads)
         {
-            if (th.joinable())
-                th.join();
+            if (th.joinable()) th.join();
         }
         workerThreads.clear();
-
-        // 5. Release IOCP
         if (hIOCP)
         {
             CloseHandle(hIOCP);
             hIOCP = nullptr;
         }
-
-        // 6. Cleanup SSL
-        if (sslContext)
-        {
-            SSL_CTX_free(sslContext);
-            sslContext = nullptr;
-        }
-
-        // 7. Cleanup WinSock
+        CleanupSslContext();
         WSACleanup();
     }
     void Server::MapControllers(Web::RouteConfig* config)
@@ -295,6 +290,7 @@ namespace Web
     }
     void Server::PostReceive(IOContext* ctx)
     {
+        std::cout << std::to_string(ctx->socket) << ": Post receive started" << std::endl;
         ZeroMemory(&ctx->overlapped, sizeof(OVERLAPPED));
         ctx->operationType = Operation::Receive;
         ctx->wsabuf.buf = ctx->buffer;
@@ -306,40 +302,18 @@ namespace Web
             DisconnectClient(ctx->socket);
         }
     }
-    void Server::PrepareHandshake(IOContext* ctx, int sslError)
+    bool Server::PrepareHandshake(IOContext* ctx)
     {
+        std::cout << std::to_string(ctx->socket) << ": Handshake started ..." << std::endl;
         ZeroMemory(&ctx->overlapped, sizeof(OVERLAPPED));
 
-        if (sslError == SSL_ERROR_WANT_READ)
-        {
-            ctx->operationType = Operation::Handshake;
+        ctx->operationType = Operation::Handshake;
+        ctx->wsabuf.buf = ctx->buffer;
+        ctx->wsabuf.len = sizeof(ctx->buffer);
+        DWORD flags = 0;
 
-            ctx->wsabuf.buf = ctx->buffer;
-            ctx->wsabuf.len = sizeof(ctx->buffer);
-            DWORD flags = 0;
-
-            int res = WSARecv(ctx->socket, &ctx->wsabuf, 1, nullptr, &flags, &ctx->overlapped, nullptr);
-            if (res == SOCKET_ERROR && WSAGetLastError() != WSA_IO_PENDING)
-            {
-                DisconnectClient(ctx->socket);
-            }
-        }
-        else if (sslError == SSL_ERROR_WANT_WRITE)
-        {
-            ctx->operationType = Operation::Handshake;
-            ctx->wsabuf.buf = ctx->buffer;
-            ctx->wsabuf.len = 0;
-
-            int res = WSASend(ctx->socket, &ctx->wsabuf, 1, nullptr, 0, &ctx->overlapped, nullptr);
-            if (res == SOCKET_ERROR && WSAGetLastError() != WSA_IO_PENDING)
-            {
-                DisconnectClient(ctx->socket);
-            }
-        }
-        else
-        {
-            DisconnectClient(ctx->socket);
-        }
+        int res = WSARecv(ctx->socket, &ctx->wsabuf, 1, nullptr, &flags, &ctx->overlapped, nullptr);
+        return !(res == SOCKET_ERROR && WSAGetLastError() != WSA_IO_PENDING);
     }
 
     void Server::SendPendingBIO(IOContext* ctx)
@@ -379,6 +353,13 @@ namespace Web
             clients.erase(std::remove(clients.begin(), clients.end(), s), clients.end());
         }
     }
+    void Server::CleanupSslContext()
+    {
+        if (sslContext != nullptr)
+        {
+            SSL_CTX_free(sslContext);
+        }
+    }
     void Server::DisconnectClient(SOCKET s) {
         CleanupSocket(s);
     }
@@ -410,7 +391,6 @@ namespace Web
 
             if (!ctx)
             {
-                // Possibly shutdown signal
                 break;
             }
 
@@ -433,13 +413,13 @@ namespace Web
                 ctx->wsabuf.buf = ctx->buffer;
                 ctx->wsabuf.len = sizeof(ctx->buffer);
                 DWORD flags = 0;
+
                 int res = WSARecv(ctx->socket, &ctx->wsabuf, 1, NULL, &flags, &ctx->overlapped, NULL);
                 if (res == SOCKET_ERROR && WSAGetLastError() != WSA_IO_PENDING)
                 {
                     DisconnectClient(ctx->socket);
                     delete ctx;
-                    PostAccept();
-                    break;
+                    ctx = nullptr;
                 }
 
                 PostAccept(); // Post next Accept
@@ -566,7 +546,7 @@ namespace Web
                     PostAccept();
                 }
 
-                DisconnectClient(ctx->socket);
+                ctx->CloseSocket();
                 delete ctx;
                 continue;
             }
@@ -581,88 +561,134 @@ namespace Web
                     std::lock_guard<std::mutex> lock(clientsMutex);
                     clients.push_back(ctx->socket);
                 }
-
-                BIO* bio = BIO_new_socket(ctx->socket, BIO_NOCLOSE);
-                SSL_set_bio(ctx->ssl, bio, bio);
-
-                PostAccept();
-
-                int ret = SSL_accept(ctx->ssl);
-                if (ret <= 0)
+                std::cout <<std::to_string(ctx->socket) << ": Accept triggered..." << std::endl;
+                ctx->ssl = SSL_new(sslContext);
+                if (!ctx->ssl) 
                 {
-                    int err = SSL_get_error(ctx->ssl, ret);
-                    if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE)
-                    {
-                        std::cout << "Error : if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE)" << std::to_string(err) << std::endl;
-                        ctx->operationType = Operation::Handshake;
-                        PrepareHandshake(ctx, err);
-                        break;
-                    }
-
-                    DisconnectClient(ctx->socket);
+                    std::cerr << "SSL_new failed for client " << ctx->socket << std::endl;
+                    LogSslError(Operation::Accept, 0);
+                    ctx->CloseSocket();
                     delete ctx;
+
+                    PostAccept();
                     break;
                 }
 
-                ctx->operationType = Operation::Receive;
+                // Create BIOs and associate them with the socket and SSL object
+                ctx->rbio = BIO_new(BIO_s_socket()); // BIO connected directly to socket
+                ctx->wbio = BIO_new(BIO_s_socket());
+
+                if (!ctx->rbio || !ctx->wbio) 
+                {
+                    std::cerr << "BIO_new failed for client " << ctx->socket << std::endl;
+                   
+                    ctx->CleanupBIO();
+                    ctx->CleanupSSL();
+                    ctx->CloseSocket();
+
+                    delete ctx;
+                    PostAccept();
+                    break;
+                }
+
+                BIO_set_fd(ctx->rbio, (int)ctx->socket, BIO_NOCLOSE);
+                BIO_set_fd(ctx->wbio, (int)ctx->socket, BIO_NOCLOSE);
+
+                SSL_set_bio(ctx->ssl, ctx->rbio, ctx->wbio);
+
+                ctx->operationType = Operation::Handshake;
+                ctx->lastSentPlaintext = 0;
+                ctx->dataTransfered = 0;
+                if (ctx->request) { delete ctx->request; ctx->request = nullptr; } // Clear any old request
+                ctx->data.clear();
+
+                int ssl_ret = SSL_accept(ctx->ssl);
+                if (ssl_ret <= 0)
+                {
+                    int ssl_err = SSL_get_error(ctx->ssl, ssl_ret);
+                    std::cout << std::to_string(ctx->socket) << ": SSL_accept: " << ssl_ret << ", error: " << ssl_err << " for client: " << ctx->socket << std::endl;
+                    if (!PrepareHandshake(ctx))
+                    {
+                        PostAccept();
+
+                        ctx->CleanupBIO();
+                        ctx->CleanupSSL();
+                        ctx->CloseSocket();
+                        delete ctx;
+
+                        continue;
+                    }
+                }
+
                 PostReceive(ctx);
+                PostAccept(); 
                 break;
             }
-
             case Operation::Handshake:
             {
-                int ret = SSL_accept(ctx->ssl);
-                if (ret <= 0)
+                if (!ctx->HandshakeDone())
                 {
-                    int err = SSL_get_error(ctx->ssl, ret);
-                    if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE)
+                    int ret = SSL_accept(ctx->ssl);
+                    if (ret <= 0)
                     {
-                        std::cout << "Error : case Operation::Handshake:" << std::to_string(err) << std::endl;
-                        PrepareHandshake(ctx, err);
+                        int err = SSL_get_error(ctx->ssl, ret);
+                        if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE)
+                        {
+                            std::cout << "Error : case Operation::Handshake:" << std::to_string(err) << std::endl;
+                            PrepareHandshake(ctx);
+                            continue;
+                        }
+
+                        DisconnectClient(ctx->socket);
+                        delete ctx;
                         break;
                     }
-
-                    DisconnectClient(ctx->socket);
-                    delete ctx;
-                    break;
                 }
+                else
+                {
+                    PrepareHandshake(ctx);
+                    continue;
+                }               
 
                 ctx->operationType = Operation::Receive;
                 PostReceive(ctx);
                 break;
             }
-
             case Operation::Receive:
             {
+                std::cout << std::to_string(ctx->socket) << ": Receive triggered..." << std::endl;
                 if (bytesTransferred == 0)
                 {
+                    std::cout << "client close connection" << std::endl;
                     DisconnectClient(ctx->socket);
                     delete ctx;
-                    break;
+                    continue;
                 }
 
                 int written = BIO_write(SSL_get_rbio(ctx->ssl), ctx->buffer, bytesTransferred);
                 if (written <= 0)
                 {
+                    std::cout << "bio kosong" << std::endl;
                     DisconnectClient(ctx->socket);
                     delete ctx;
-                    break;
+                    continue;
                 }
 
                 char plaintextBuf[4096];
                 int decryptedLen = SSL_read(ctx->ssl, plaintextBuf, sizeof(plaintextBuf));
+                std::cout << "decryptedLen: " << std::to_string(decryptedLen) << std::endl;
                 if (decryptedLen <= 0)
                 {
                     int err = SSL_get_error(ctx->ssl, decryptedLen);
                     if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE)
                     {
                         PostReceive(ctx);
-                        break;
+                        continue;
                     }
-
+                    LogSslError(ctx->operationType, err);
                     DisconnectClient(ctx->socket);
                     delete ctx;
-                    break;
+                    continue;
                 }
 
                 std::string data(plaintextBuf, decryptedLen);
@@ -682,7 +708,7 @@ namespace Web
                 if (ctx->request && ctx->request->body.size() < ctx->request->contentLength)
                 {
                     PostReceive(ctx);
-                    break;
+                    continue;
                 }
 
                 std::string response;
@@ -691,24 +717,25 @@ namespace Web
                 ctx->dataTransfered = 0;
                 ctx->lastSentPlaintext = 0;
 
-                // Encrypt & send first chunk
-                size_t toSend = std::min<size_t>(response.size(), 4096);
+                // ... (Permintaan sudah diproses, respons sudah dibuat di 'response' atau 'ctx->data') ...
+
+    // Encrypt & send first chunk
+                size_t toSend = std::min<size_t>(response.size(), 4096); // Assuming response is ctx->data
                 int encryptedLen = SSL_write(ctx->ssl, response.data(), (int)toSend);
-                if (encryptedLen <= 0)
+                if (encryptedLen <= 0) // PROBLEM HERE IF IT'S WANT_READ/WANT_WRITE, NOT FATAL
                 {
                     DisconnectClient(ctx->socket);
                     delete ctx;
-                    break;
+                    continue;
                 }
-
                 ctx->lastSentPlaintext = encryptedLen;
 
                 int bioLen = BIO_read(SSL_get_wbio(ctx->ssl), ctx->buffer, sizeof(ctx->buffer));
-                if (bioLen <= 0)
+                if (bioLen <= 0) // PROBLEM HERE IF BIO_read returns 0 (no data yet), NOT FATAL
                 {
                     DisconnectClient(ctx->socket);
                     delete ctx;
-                    break;
+                    continue;
                 }
 
                 ctx->wsabuf.buf = ctx->buffer;
@@ -723,9 +750,8 @@ namespace Web
                     DisconnectClient(ctx->socket);
                     delete ctx;
                 }
-                break;
+                break; // Break from Operation::Receive, next will be Operation::Send completion
             }
-
             case Operation::Send:
             {
                 ctx->dataTransfered += ctx->lastSentPlaintext;
@@ -742,12 +768,12 @@ namespace Web
                         if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE)
                         {
                             PostReceive(ctx); // bisa diganti PostSend(ctx) jika kamu pisahkan IO write
-                            break;
+                            continue;
                         }
-
+                        LogSslError(ctx->operationType, err);
                         DisconnectClient(ctx->socket);
                         delete ctx;
-                        break;
+                        continue;
                     }
 
                     ctx->lastSentPlaintext = written;
@@ -757,7 +783,7 @@ namespace Web
                     {
                         DisconnectClient(ctx->socket);
                         delete ctx;
-                        break;
+                        continue;
                     }
 
                     ctx->wsabuf.buf = ctx->buffer;
@@ -786,6 +812,35 @@ namespace Web
                 delete ctx;
                 break;
             }
+        }
+    }
+    void Server::LogSslError(Operation operationType, int err)
+    {
+        std::string message = "";
+        switch (operationType)
+        {
+        case Web::Operation::Accept:
+            message = "Operation::Accept:";
+            break;
+        case Web::Operation::Handshake:
+            message = "Operation::Handshake:";
+            break;
+        case Web::Operation::Receive:
+            message = "Operation::Receive:";
+            break;
+        case Web::Operation::Send:
+            message = "Operation::Send:";
+            break;
+        default:
+            break;
+        }
+        std::cerr << message << " SSL_get_error return code: " << std::to_string(err) << std::endl;
+        unsigned long e;
+        while ((e = ERR_get_error()))
+        {
+            char msg[256];
+            ERR_error_string_n(e, msg, sizeof(msg));
+            std::cerr << "OpenSSL Error: " << msg << "\n";
         }
     }
     void Server::HandleRequest(Web::HttpRequest& request, std::string& dataout)

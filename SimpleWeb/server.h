@@ -27,35 +27,58 @@ namespace Web
         WSABUF wsabuf;
         SOCKET socket = INVALID_SOCKET;
         SSL* ssl = nullptr;
+        BIO* rbio = nullptr;
+        BIO* wbio = nullptr;
         Operation operationType;
+        char buffer[8192]{};
 
-        char buffer[4096]{};
         std::chrono::steady_clock::time_point lastActive;
 
         std::string data = "";
         size_t lastSentPlaintext = 0;
         size_t dataTransfered = 0;
-
         Web::HttpRequest* request = nullptr;
+        bool HandshakeDone()
+        {
+            return SSL_is_init_finished(ssl) > 0;
+        }
         IOContext() : operationType(Operation::Accept)
         {
             wsabuf.buf = buffer;
             wsabuf.len = sizeof(buffer);
             lastActive = std::chrono::steady_clock::now();
         }
+
         ~IOContext()
         {
+            CleanupSSL();
             if (request != nullptr)
             {
                 delete request;
                 request = nullptr;
             }
+        }
+
+        void CloseSocket()
+        {
+            if (socket != INVALID_SOCKET) {
+                closesocket(socket);
+                socket = INVALID_SOCKET;
+            }
+        }
+        void CleanupSSL()
+        {
             if (ssl != nullptr)
             {
                 SSL_free(ssl);
-            }
+                ssl = nullptr;
+            }   
         }
-        bool handshakeDone = false;
+        void CleanupBIO()
+        {
+            if (rbio) BIO_free(rbio);
+            if (wbio) BIO_free(wbio);
+        }
     };
 
     // Main IOCP server class
@@ -63,6 +86,10 @@ namespace Web
     {
     public:
         Server() : hIOCP(NULL), listenerSocket(INVALID_SOCKET), running(false), sslContext(nullptr), useSSL(false) {}
+        ~Server()
+        {
+            Stop();
+        }
         bool Start();
         void Stop();
         void MapControllers(Web::RouteConfig* config);
@@ -103,12 +130,13 @@ namespace Web
         void Shutdown();
         void WorkerThread();
         void WorkerThreadSsl();
+        void LogSslError(Operation operationType, int err);
         bool PostAccept();
         void PostReceive(IOContext* ctx);
-        void PrepareHandshake(IOContext* ctx, int sslError);
+        bool PrepareHandshake(IOContext* ctx);
         void SendPendingBIO(IOContext* ctx);
         void CleanupSocket(SOCKET s);
-        void CleanupContext(IOContext* ctx);
+        void CleanupSslContext();
         void DisconnectClient(SOCKET s);
         void HandleRequest(Web::HttpRequest& request, std::string& response);
     };
