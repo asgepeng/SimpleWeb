@@ -546,7 +546,10 @@ namespace Web
                     PostAccept();
                 }
 
+                ctx->CleanupBIO();
+                ctx->CleanupSSL();
                 ctx->CloseSocket();
+                
                 delete ctx;
                 continue;
             }
@@ -565,7 +568,6 @@ namespace Web
                 ctx->ssl = SSL_new(sslContext);
                 if (!ctx->ssl) 
                 {
-                    std::cerr << "SSL_new failed for client " << ctx->socket << std::endl;
                     LogSslError(Operation::Accept, 0);
                     ctx->CloseSocket();
                     delete ctx;
@@ -574,14 +576,12 @@ namespace Web
                     break;
                 }
 
-                // Create BIOs and associate them with the socket and SSL object
-                ctx->rbio = BIO_new(BIO_s_socket()); // BIO connected directly to socket
-                ctx->wbio = BIO_new(BIO_s_socket());
+                ctx->rbio = BIO_new(BIO_s_mem());
+                ctx->wbio = BIO_new(BIO_s_mem());
+                SSL_set_bio(ctx->ssl, ctx->rbio, ctx->wbio);
 
                 if (!ctx->rbio || !ctx->wbio) 
                 {
-                    std::cerr << "BIO_new failed for client " << ctx->socket << std::endl;
-                   
                     ctx->CleanupBIO();
                     ctx->CleanupSSL();
                     ctx->CloseSocket();
@@ -599,33 +599,26 @@ namespace Web
                 ctx->operationType = Operation::Handshake;
                 ctx->lastSentPlaintext = 0;
                 ctx->dataTransfered = 0;
-                if (ctx->request) { delete ctx->request; ctx->request = nullptr; } // Clear any old request
+                if (ctx->request) { delete ctx->request; ctx->request = nullptr; }
                 ctx->data.clear();
 
-                int ssl_ret = SSL_accept(ctx->ssl);
-                if (ssl_ret <= 0)
+                int handshakeResult = SSL_accept(ctx->ssl);
+                if (handshakeResult <= 0)
                 {
-                    int ssl_err = SSL_get_error(ctx->ssl, ssl_ret);
-                    std::cout << std::to_string(ctx->socket) << ": SSL_accept: " << ssl_ret << ", error: " << ssl_err << " for client: " << ctx->socket << std::endl;
-                    if (!PrepareHandshake(ctx))
+                    int ssl_err = SSL_get_error(ctx->ssl, handshakeResult);
+                    if (ssl_err == SSL_ERROR_WANT_READ || ssl_err == SSL_ERROR_WANT_WRITE)
                     {
-                        PostAccept();
-
-                        ctx->CleanupBIO();
-                        ctx->CleanupSSL();
-                        ctx->CloseSocket();
-                        delete ctx;
-
+                        PrepareHandshake(ctx);
                         continue;
                     }
                 }
-
-                PostReceive(ctx);
                 PostAccept(); 
                 break;
             }
             case Operation::Handshake:
             {
+                BIO_write(ctx->rbio, ctx->buffer, bytesTransferred);
+
                 if (!ctx->HandshakeDone())
                 {
                     int ret = SSL_accept(ctx->ssl);
