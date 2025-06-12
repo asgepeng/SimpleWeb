@@ -21,7 +21,8 @@ int main()
         std::cerr << "Failed to start server" << std::endl;
         return 1;
     }
-
+    std::string endpoint = server.UseSSL() ? "https://localhost" : "http://localhost";
+    ShellExecuteA(NULL, "open", "msedge", endpoint.c_str(), NULL, SW_SHOWNORMAL);
     std::cout << "Press Enter to stop server..." << std::endl;
     std::cin.get();
 

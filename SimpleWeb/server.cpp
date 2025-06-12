@@ -1,10 +1,11 @@
-#include "routing.h"
+﻿#include "routing.h"
 #include "server.h"
 #include "staticfile.h"
 #include "appconfig.h"
 
 #include <openssl/err.h>
 #include <exception>
+#include <memory>
 
 #pragma comment(lib, "libssl.lib")
 #pragma comment(lib, "libcrypto.lib")
@@ -162,7 +163,7 @@ namespace Web
         // Post initial AcceptEx
         for (int i = 0; i < threadCount * 2; i++)
         { // multiple accepts pending
-            if (!PostAccept()) 
+            if (!PostAccept())
             {
                 Stop();
                 return false;
@@ -288,61 +289,104 @@ namespace Web
 
         return true;
     }
-    void Server::PostReceive(IOContext* ctx)
+    bool Server::StartReceive(IOContext* ctx)
     {
-        std::cout << std::to_string(ctx->socket) << ": Post receive started" << std::endl;
-        ZeroMemory(&ctx->overlapped, sizeof(OVERLAPPED));
         ctx->operationType = Operation::Receive;
+        ZeroMemory(&ctx->overlapped, sizeof(ctx->overlapped));
+        ZeroMemory(&ctx->wsabuf, sizeof(ctx->wsabuf));
         ctx->wsabuf.buf = ctx->buffer;
         ctx->wsabuf.len = sizeof(ctx->buffer);
         DWORD flags = 0;
-        int res = WSARecv(ctx->socket, &ctx->wsabuf, 1, nullptr, &flags, &ctx->overlapped, nullptr);
-        if (res == SOCKET_ERROR && WSAGetLastError() != WSA_IO_PENDING)
+
+        int result = WSARecv(ctx->socket, &ctx->wsabuf, 1, NULL, &flags, &ctx->overlapped, NULL);
+        return !(result == SOCKET_ERROR && WSAGetLastError() != WSA_IO_PENDING);
+    }
+    void Server::ProcessReceiveAsync(IOContext* ctx)
+    {
+
+    }
+
+    bool Server::StartHandshake(IOContext* ctx)
+    {
+        return false;
+    }
+    void Server::ProcessHandshakeAsync(IOContext* ctx)
+    {
+        int ret = SSL_do_handshake(ctx->ssl);
+        int err = SSL_get_error(ctx->ssl, ret);
+
+        if (ret == 1)
         {
-            DisconnectClient(ctx->socket);
+            StartReceive(ctx); // lanjut ke baca data dari client
+            return;
         }
-    }
-    bool Server::PrepareHandshake(IOContext* ctx)
-    {
-        std::cout << std::to_string(ctx->socket) << ": Handshake started ..." << std::endl;
-        ZeroMemory(&ctx->overlapped, sizeof(OVERLAPPED));
 
-        ctx->operationType = Operation::Handshake;
-        ctx->wsabuf.buf = ctx->buffer;
-        ctx->wsabuf.len = sizeof(ctx->buffer);
-        DWORD flags = 0;
-
-        int res = WSARecv(ctx->socket, &ctx->wsabuf, 1, nullptr, &flags, &ctx->overlapped, nullptr);
-        return !(res == SOCKET_ERROR && WSAGetLastError() != WSA_IO_PENDING);
-    }
-
-    void Server::SendPendingBIO(IOContext* ctx)
-    {
-        char outBuffer[4096];
-        BIO* wbio = SSL_get_wbio(ctx->ssl);
-        while (BIO_pending(wbio) > 0)
+        if (err == SSL_ERROR_WANT_READ)
         {
-            int len = BIO_read(wbio, outBuffer, sizeof(outBuffer));
-            if (len <= 0)
-                break;
-
-            WSABUF wsabuf;
-            wsabuf.buf = outBuffer;
-            wsabuf.len = len;
-
-            WSAOVERLAPPED* overlapped = new WSAOVERLAPPED();
-            ZeroMemory(overlapped, sizeof(WSAOVERLAPPED));
-            DWORD sentBytes = 0;
-
-            int ret = WSASend(ctx->socket, &wsabuf, 1, &sentBytes, 0, overlapped, nullptr);
-            if (ret == SOCKET_ERROR && WSAGetLastError() != WSA_IO_PENDING)
+            // Perlu kirim data ke client dari wbio
+            char tempBuf[8192];
+            int bytesToSend = BIO_read(ctx->wbio, tempBuf, sizeof(tempBuf));
+            if (bytesToSend > 0)
             {
-                delete overlapped;
-                DisconnectClient(ctx->socket);
-                break;
+                memcpy(ctx->buffer, tempBuf, bytesToSend);
+                ctx->wsabuf.buf = ctx->buffer;
+                ctx->wsabuf.len = bytesToSend;
+                ctx->operationType = Operation::Send;
+                ProcessSendAsync(ctx);
+            }
+            else
+            {
+                delete ctx;
+                ctx = nullptr;
             }
         }
+        else if (err == SSL_ERROR_WANT_WRITE)
+        {
+            // Biasanya tidak terjadi karena kita pakai BIO memory, tapi tetap ditangani
+            // Tidak usah kirim apa-apa dulu, mungkin akan dapat event IO lagi
+        }
+        else
+        {
+            ERR_print_errors_fp(stderr); // debug
+            delete ctx;
+            ctx = nullptr;
+        }
     }
+
+    bool Server::StartSend(IOContext* ctx)
+    {
+        size_t toSend = min(ctx->data.size(), sizeof(ctx->buffer));
+
+        memcpy(ctx->buffer, ctx->data.c_str(), toSend);
+        ctx->wsabuf.buf = ctx->buffer;
+        ctx->wsabuf.len = static_cast<ULONG>(toSend);
+        ctx->operationType = Operation::Send;
+
+        ZeroMemory(&ctx->overlapped, sizeof(ctx->overlapped));
+        DWORD sentBytes = 0;
+        int res = WSASend(ctx->socket, &ctx->wsabuf, 1, &sentBytes, 0, &ctx->overlapped, NULL);
+        return !(res == SOCKET_ERROR && WSAGetLastError() != WSA_IO_PENDING);
+    }
+    bool Server::ProcessSendAsync(IOContext* ctx)
+    {
+        if (ctx->dataTransfered < ctx->data.size())
+        {
+            size_t remaining = ctx->data.size() - ctx->dataTransfered;
+            size_t toSend = min(remaining, sizeof(ctx->buffer));
+
+            memcpy(ctx->buffer, ctx->data.c_str() + ctx->dataTransfered, toSend);
+            ctx->wsabuf.buf = ctx->buffer;
+            ctx->wsabuf.len = static_cast<ULONG>(toSend);
+            ctx->operationType = Operation::Send;
+
+            ZeroMemory(&ctx->overlapped, sizeof(ctx->overlapped));
+            DWORD sentBytes = 0;
+            int res = WSASend(ctx->socket, &ctx->wsabuf, 1, &sentBytes, 0, &ctx->overlapped, NULL);
+            return !(res == SOCKET_ERROR && WSAGetLastError() != WSA_IO_PENDING);
+        }
+        return false;
+    }
+
     void Server::CleanupSocket(SOCKET s)
     {
         if (s != INVALID_SOCKET)
@@ -351,6 +395,14 @@ namespace Web
 
             std::lock_guard<std::mutex> lock(clientsMutex);
             clients.erase(std::remove(clients.begin(), clients.end(), s), clients.end());
+        }
+    }
+    void Server::CleanupContext(IOContext* ctx)
+    {
+        if (ctx != nullptr)
+        {
+            delete ctx;
+            ctx = nullptr;
         }
     }
     void Server::CleanupSslContext()
@@ -379,21 +431,11 @@ namespace Web
                 if (ctx && ctx->operationType == Operation::Accept)
                 {
                     PostAccept();
-                    delete ctx;
-                    continue;
                 }
-                else if (ctx) {
-                    DisconnectClient(ctx->socket);
-                    delete ctx;
-                }
+                CleanupContext(ctx);
                 continue;
             }
-
-            if (!ctx)
-            {
-                break;
-            }
-
+            if (!ctx) break;
             ctx->lastActive = std::chrono::steady_clock::now();
 
             switch (ctx->operationType)
@@ -405,121 +447,56 @@ namespace Web
                     std::lock_guard<std::mutex> lock(clientsMutex);
                     clients.push_back(ctx->socket);
                 }
-
-                // Prepare for first Receive
-                ctx->operationType = Operation::Receive;
-                ZeroMemory(&ctx->overlapped, sizeof(ctx->overlapped));
-                ZeroMemory(&ctx->wsabuf, sizeof(ctx->wsabuf));
-                ctx->wsabuf.buf = ctx->buffer;
-                ctx->wsabuf.len = sizeof(ctx->buffer);
-                DWORD flags = 0;
-
-                int res = WSARecv(ctx->socket, &ctx->wsabuf, 1, NULL, &flags, &ctx->overlapped, NULL);
-                if (res == SOCKET_ERROR && WSAGetLastError() != WSA_IO_PENDING)
-                {
-                    DisconnectClient(ctx->socket);
-                    delete ctx;
-                    ctx = nullptr;
-                }
-
-                PostAccept(); // Post next Accept
+                if (!StartReceive(ctx)) CleanupContext(ctx);
+                PostAccept();
                 break;
             }
             case Operation::Receive:
             {
                 if (bytesTransferred == 0)
                 {
-                    DisconnectClient(ctx->socket);
-                    delete ctx;
+                    CleanupContext(ctx);
                     break;
                 }
-
-                std::string data(ctx->buffer, bytesTransferred);
+                ctx->data.append(ctx->buffer, bytesTransferred);
                 if (ctx->request == nullptr)
                 {
-                    auto headerEnd = data.find("\r\n\r\n");
+                    size_t headerEnd = ctx->data.find("\r\n\r\n");
                     if (headerEnd != std::string::npos)
                     {
-                        ctx->request = new Web::HttpRequest(data);
+                        std::string rawHeader = ctx->data.substr(0, headerEnd + 4);
+                        ctx->request = std::make_unique<Web::HttpRequest>(rawHeader);
+
+                        std::string remaining = ctx->data.substr(headerEnd + 4);
+                        ctx->request->body = remaining;
+
+                        ctx->data.clear();
                     }
                 }
                 else
                 {
-                    ctx->request->body.append(data);
+                    ctx->request->body.append(ctx->data);
+                    ctx->data.clear();
                 }
 
                 if (ctx->request != nullptr && ctx->request->body.size() < ctx->request->contentLength)
                 {
-                    ZeroMemory(&ctx->overlapped, sizeof(ctx->overlapped));
-                    ctx->operationType = Operation::Receive;
-
-                    DWORD flags = 0;
-                    DWORD recvBytes = 0;
-                    ctx->wsabuf.buf = ctx->buffer;
-                    ctx->wsabuf.len = sizeof(ctx->buffer);
-
-                    int res = WSARecv(ctx->socket, &ctx->wsabuf, 1, &recvBytes, &flags, &ctx->overlapped, nullptr);
-                    if (res == SOCKET_ERROR && WSAGetLastError() != WSA_IO_PENDING)
-                    {
-                        DisconnectClient(ctx->socket);
-                        delete ctx;
-                    }
+                    if (!StartReceive(ctx)) CleanupContext(ctx);
                     break;
                 }
 
-                std::string response;
-                HandleRequest(*ctx->request, response);
-
-                ctx->data = response;
-                size_t toSend = min(response.size(), sizeof(ctx->buffer));
-
-                memcpy(ctx->buffer, ctx->data.c_str(), toSend);
-                ctx->wsabuf.buf = ctx->buffer;
-                ctx->wsabuf.len = static_cast<ULONG>(toSend);
-                ctx->operationType = Operation::Send;
-
-                ZeroMemory(&ctx->overlapped, sizeof(ctx->overlapped));
-                DWORD sentBytes = 0;
-                int res = WSASend(ctx->socket, &ctx->wsabuf, 1, &sentBytes, 0, &ctx->overlapped, NULL);
-                if (res == SOCKET_ERROR && WSAGetLastError() != WSA_IO_PENDING)
-                {
-                    DisconnectClient(ctx->socket);
-                    delete ctx;
-                    break;
-                }
+                HandleRequest(ctx);
+                if (!StartSend(ctx)) CleanupContext(ctx);
                 break;
             }
             case Operation::Send:
             {
                 ctx->dataTransfered += bytesTransferred;
-                if (ctx->dataTransfered < ctx->data.size())
-                {
-                    size_t remaining = ctx->data.size() - ctx->dataTransfered;
-                    size_t toSend = min(remaining, sizeof(ctx->buffer));
-
-                    memcpy(ctx->buffer, ctx->data.c_str() + ctx->dataTransfered, toSend);
-                    ctx->wsabuf.buf = ctx->buffer;
-                    ctx->wsabuf.len = static_cast<ULONG>(toSend);
-                    ctx->operationType = Operation::Send;
-
-                    ZeroMemory(&ctx->overlapped, sizeof(ctx->overlapped));
-                    DWORD sentBytes = 0;
-                    int res = WSASend(ctx->socket, &ctx->wsabuf, 1, &sentBytes, 0, &ctx->overlapped, NULL);
-                    if (res == SOCKET_ERROR && WSAGetLastError() != WSA_IO_PENDING)
-                    {
-                        DisconnectClient(ctx->socket);
-                        delete ctx;
-                    }
-                }
-                else
-                {
-                    DisconnectClient(ctx->socket);
-                    delete ctx;
-                }
+                if (!ProcessSendAsync(ctx)) CleanupContext(ctx);
                 break;
             }
             default:
-                delete ctx;
+                CleanupContext(ctx);
                 break;
             }
         }
@@ -529,277 +506,203 @@ namespace Web
         DWORD bytesTransferred;
         ULONG_PTR completionKey;
         LPOVERLAPPED overlapped;
-
         while (running)
         {
             BOOL success = GetQueuedCompletionStatus(hIOCP, &bytesTransferred, &completionKey, &overlapped, INFINITE);
-            IOContext* ctx = reinterpret_cast<IOContext*>(overlapped);
-
-            if (!ctx) continue;
-
-            ctx->lastActive = std::chrono::steady_clock::now();
+            IOContext* ctx = (IOContext*)overlapped;
 
             if (!success)
             {
-                if (ctx->operationType == Operation::Accept)
-                {
-                    PostAccept();
-                }
-
-                ctx->CleanupBIO();
-                ctx->CleanupSSL();
-                ctx->CloseSocket();
-                
-                delete ctx;
+                if (ctx && ctx->operationType == Operation::Accept) PostAccept();
+                CleanupContext(ctx);
                 continue;
             }
+            if (!ctx) break;
+            ctx->lastActive = std::chrono::steady_clock::now();
 
             switch (ctx->operationType)
             {
             case Operation::Accept:
             {
                 setsockopt(ctx->socket, SOL_SOCKET, SO_UPDATE_ACCEPT_CONTEXT, (char*)&listenerSocket, sizeof(listenerSocket));
-
                 {
                     std::lock_guard<std::mutex> lock(clientsMutex);
                     clients.push_back(ctx->socket);
                 }
-                std::cout <<std::to_string(ctx->socket) << ": Accept triggered..." << std::endl;
-                ctx->ssl = SSL_new(sslContext);
-                if (!ctx->ssl) 
+                if (!ctx->PrepareSSL(sslContext))
                 {
-                    LogSslError(Operation::Accept, 0);
-                    ctx->CloseSocket();
-                    delete ctx;
-
+                    CleanupContext(ctx);
                     PostAccept();
                     break;
                 }
 
-                ctx->rbio = BIO_new(BIO_s_mem());
-                ctx->wbio = BIO_new(BIO_s_mem());
-                SSL_set_bio(ctx->ssl, ctx->rbio, ctx->wbio);
-
-                if (!ctx->rbio || !ctx->wbio) 
+                int result = SSL_accept(ctx->ssl);
+                if (result <= 0)
                 {
-                    ctx->CleanupBIO();
-                    ctx->CleanupSSL();
-                    ctx->CloseSocket();
-
-                    delete ctx;
-                    PostAccept();
-                    break;
-                }
-
-                BIO_set_fd(ctx->rbio, (int)ctx->socket, BIO_NOCLOSE);
-                BIO_set_fd(ctx->wbio, (int)ctx->socket, BIO_NOCLOSE);
-
-                SSL_set_bio(ctx->ssl, ctx->rbio, ctx->wbio);
-
-                ctx->operationType = Operation::Handshake;
-                ctx->lastSentPlaintext = 0;
-                ctx->dataTransfered = 0;
-                if (ctx->request) { delete ctx->request; ctx->request = nullptr; }
-                ctx->data.clear();
-
-                int handshakeResult = SSL_accept(ctx->ssl);
-                if (handshakeResult <= 0)
-                {
-                    int ssl_err = SSL_get_error(ctx->ssl, handshakeResult);
-                    if (ssl_err == SSL_ERROR_WANT_READ || ssl_err == SSL_ERROR_WANT_WRITE)
+                    int sslErr = SSL_get_error(ctx->ssl, result);
+                    if (sslErr == SSL_ERROR_WANT_READ || sslErr == SSL_ERROR_WANT_WRITE)
                     {
-                        PrepareHandshake(ctx);
-                        continue;
-                    }
-                }
-                PostAccept(); 
-                break;
-            }
-            case Operation::Handshake:
-            {
-                BIO_write(ctx->rbio, ctx->buffer, bytesTransferred);
-
-                if (!ctx->HandshakeDone())
-                {
-                    int ret = SSL_accept(ctx->ssl);
-                    if (ret <= 0)
-                    {
-                        int err = SSL_get_error(ctx->ssl, ret);
-                        if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE)
+                        //Kirim data TLS ke klien (dari wbio)
+                        int pending = BIO_read(ctx->wbio, ctx->buffer, sizeof(ctx->buffer));
+                        if (pending > 0)
                         {
-                            std::cout << "Error : case Operation::Handshake:" << std::to_string(err) << std::endl;
-                            PrepareHandshake(ctx);
-                            continue;
+                            ctx->data = std::string(ctx->buffer, pending);
+                            if (!ProcessSendAsync(ctx))
+                            {
+                                CleanupContext(ctx);
+                                PostAccept();
+                            }
+                            break;
+                        }
+                        if (!StartReceive(ctx))
+                        {
+                            CleanupContext(ctx);
+                            PostAccept();
                         }
 
-                        DisconnectClient(ctx->socket);
-                        delete ctx;
                         break;
                     }
+                    LogSslError(ctx->operationType, sslErr);
+                    CleanupContext(ctx);
+                    PostAccept();
+                    break;
                 }
-                else
-                {
-                    PrepareHandshake(ctx);
-                    continue;
-                }               
 
-                ctx->operationType = Operation::Receive;
-                PostReceive(ctx);
+                if (!StartReceive(ctx))
+                {
+                    CleanupContext(ctx);
+                    PostAccept();
+                }
                 break;
             }
             case Operation::Receive:
             {
-                std::cout << std::to_string(ctx->socket) << ": Receive triggered..." << std::endl;
-                if (bytesTransferred == 0)
-                {
-                    std::cout << "client close connection" << std::endl;
-                    DisconnectClient(ctx->socket);
-                    delete ctx;
-                    continue;
-                }
-
-                int written = BIO_write(SSL_get_rbio(ctx->ssl), ctx->buffer, bytesTransferred);
+                int written = BIO_write(ctx->rbio, ctx->buffer, bytesTransferred); // <- ini raw TLS packet
                 if (written <= 0)
                 {
-                    std::cout << "bio kosong" << std::endl;
-                    DisconnectClient(ctx->socket);
-                    delete ctx;
-                    continue;
+                    CleanupContext(ctx);
+                    PostAccept();
+                    break;
                 }
 
-                char plaintextBuf[4096];
-                int decryptedLen = SSL_read(ctx->ssl, plaintextBuf, sizeof(plaintextBuf));
-                std::cout << "decryptedLen: " << std::to_string(decryptedLen) << std::endl;
-                if (decryptedLen <= 0)
+                if (!ctx->HandshakeDone())
                 {
-                    int err = SSL_get_error(ctx->ssl, decryptedLen);
-                    if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE)
+                    int result = SSL_accept(ctx->ssl);
+                    if (result <= 0)
                     {
-                        PostReceive(ctx);
-                        continue;
+                        int sslErr = SSL_get_error(ctx->ssl, result);
+                        if (sslErr == SSL_ERROR_WANT_READ || sslErr == SSL_ERROR_WANT_WRITE)
+                        {
+                            int pending = BIO_read(ctx->wbio, ctx->buffer, sizeof(ctx->buffer));
+                            if (pending > 0)
+                            {
+                                ctx->data = std::string(ctx->buffer, pending);
+                                if (!ProcessSendAsync(ctx))
+                                {
+                                    CleanupContext(ctx);
+                                    PostAccept();
+                                }
+                                break;
+                            }
+                            if (!StartReceive(ctx))
+                            {
+                                CleanupContext(ctx);
+                                PostAccept();
+                            }
+                            break;
+                        }
+
+                        LogSslError(ctx->operationType, sslErr);
+                        CleanupContext(ctx);
+                        PostAccept();
+                        break;
                     }
-                    LogSslError(ctx->operationType, err);
-                    DisconnectClient(ctx->socket);
-                    delete ctx;
-                    continue;
                 }
 
-                std::string data(plaintextBuf, decryptedLen);
-                if (!ctx->request)
+                int len = SSL_read(ctx->ssl, ctx->buffer, sizeof(ctx->buffer));
+                if (len > 0)
                 {
-                    size_t pos = data.find("\r\n\r\n");
-                    if (pos != std::string::npos)
-                    {
-                        ctx->request = new Web::HttpRequest(data);
-                    }
-                }
-                else
-                {
-                    ctx->request->body.append(data);
-                }
+                    std::string raw(ctx->buffer, len);
+                    ctx->request = std::make_unique<Web::HttpRequest>(raw);
+                    HandleRequest(ctx);
 
-                if (ctx->request && ctx->request->body.size() < ctx->request->contentLength)
-                {
-                    PostReceive(ctx);
-                    continue;
-                }
-
-                std::string response;
-                HandleRequest(*ctx->request, response);
-                ctx->data = response;
-                ctx->dataTransfered = 0;
-                ctx->lastSentPlaintext = 0;
-
-                // ... (Permintaan sudah diproses, respons sudah dibuat di 'response' atau 'ctx->data') ...
-
-    // Encrypt & send first chunk
-                size_t toSend = std::min<size_t>(response.size(), 4096); // Assuming response is ctx->data
-                int encryptedLen = SSL_write(ctx->ssl, response.data(), (int)toSend);
-                if (encryptedLen <= 0) // PROBLEM HERE IF IT'S WANT_READ/WANT_WRITE, NOT FATAL
-                {
-                    DisconnectClient(ctx->socket);
-                    delete ctx;
-                    continue;
-                }
-                ctx->lastSentPlaintext = encryptedLen;
-
-                int bioLen = BIO_read(SSL_get_wbio(ctx->ssl), ctx->buffer, sizeof(ctx->buffer));
-                if (bioLen <= 0) // PROBLEM HERE IF BIO_read returns 0 (no data yet), NOT FATAL
-                {
-                    DisconnectClient(ctx->socket);
-                    delete ctx;
-                    continue;
-                }
-
-                ctx->wsabuf.buf = ctx->buffer;
-                ctx->wsabuf.len = bioLen;
-                ctx->operationType = Operation::Send;
-                ZeroMemory(&ctx->overlapped, sizeof(ctx->overlapped));
-
-                DWORD sentBytes = 0;
-                int res = WSASend(ctx->socket, &ctx->wsabuf, 1, &sentBytes, 0, &ctx->overlapped, nullptr);
-                if (res == SOCKET_ERROR && WSAGetLastError() != WSA_IO_PENDING)
-                {
-                    DisconnectClient(ctx->socket);
-                    delete ctx;
-                }
-                break; // Break from Operation::Receive, next will be Operation::Send completion
-            }
-            case Operation::Send:
-            {
-                ctx->dataTransfered += ctx->lastSentPlaintext;
-
-                if (ctx->dataTransfered < ctx->data.size())
-                {
-                    size_t remaining = ctx->data.size() - ctx->dataTransfered;
-                    size_t toWrite = std::min<size_t>(remaining, 4096);
-
-                    int written = SSL_write(ctx->ssl, ctx->data.data() + ctx->dataTransfered, (int)toWrite);
+                    int written = SSL_write(ctx->ssl, ctx->data.data(), (int)ctx->data.size());
                     if (written <= 0)
                     {
-                        int err = SSL_get_error(ctx->ssl, written);
-                        if (err == SSL_ERROR_WANT_READ || err == SSL_ERROR_WANT_WRITE)
+                        int sslErr = SSL_get_error(ctx->ssl, written);
+                        LogSslError(ctx->operationType, sslErr);
+                        CleanupContext(ctx);
+                        return;
+                    }
+
+                    int pending = BIO_read(ctx->wbio, ctx->buffer, sizeof(ctx->buffer));
+                    if (pending > 0)
+                    {
+                        ctx->data = std::string(ctx->buffer, pending);
+                        if (!ProcessSendAsync(ctx))
                         {
-                            PostReceive(ctx); // bisa diganti PostSend(ctx) jika kamu pisahkan IO write
-                            continue;
+                            CleanupContext(ctx);
+                            break;
                         }
-                        LogSslError(ctx->operationType, err);
-                        DisconnectClient(ctx->socket);
-                        delete ctx;
-                        continue;
                     }
-
-                    ctx->lastSentPlaintext = written;
-
-                    int bioLen = BIO_read(SSL_get_wbio(ctx->ssl), ctx->buffer, sizeof(ctx->buffer));
-                    if (bioLen <= 0)
-                    {
-                        DisconnectClient(ctx->socket);
-                        delete ctx;
-                        continue;
-                    }
-
-                    ctx->wsabuf.buf = ctx->buffer;
-                    ctx->wsabuf.len = bioLen;
-                    ctx->operationType = Operation::Send;
-                    ZeroMemory(&ctx->overlapped, sizeof(ctx->overlapped));
-
-                    DWORD sentBytes = 0;
-                    int res = WSASend(ctx->socket, &ctx->wsabuf, 1, &sentBytes, 0, &ctx->overlapped, nullptr);
-                    if (res == SOCKET_ERROR && WSAGetLastError() != WSA_IO_PENDING)
-                    {
-                        DisconnectClient(ctx->socket);
-                        delete ctx;
-                    }
+                    break;
                 }
                 else
                 {
-                    DisconnectClient(ctx->socket);
-                    delete ctx;
+                    int sslErr = SSL_get_error(ctx->ssl, len);
+                    if (sslErr == SSL_ERROR_WANT_READ || sslErr == SSL_ERROR_WANT_WRITE)
+                    {
+                        int pending = BIO_read(ctx->wbio, ctx->buffer, sizeof(ctx->buffer));
+                        if (pending > 0)
+                        {
+                            ctx->data = std::string(ctx->buffer, pending);
+                            if (!ProcessSendAsync(ctx))
+                            {
+                                CleanupContext(ctx);
+                                PostAccept();
+                            }
+                            break;
+                        }
+                        if (!StartReceive(ctx))
+                        {
+                            CleanupContext(ctx);
+                            PostAccept();
+                        }
+                        break;
+                    }
+
+                    // SSL_read error fatal
+                    CleanupContext(ctx);
+                    PostAccept();
+                    break;
+                }
+                if (!StartReceive(ctx))
+                {
+                    CleanupContext(ctx);
+                    PostAccept();
                 }
                 break;
             }
-
+            case Operation::Send:
+            {
+                int pending = BIO_read(ctx->wbio, ctx->buffer, sizeof(ctx->buffer));
+                if (pending > 0)
+                {
+                    ctx->data = std::string(ctx->buffer, pending);
+                    if (!ProcessSendAsync(ctx))
+                    {
+                        CleanupContext(ctx);
+                        PostAccept();
+                    }
+                    break;
+                }
+                if (!StartReceive(ctx))
+                {
+                    CleanupContext(ctx);
+                    PostAccept(); 
+                }
+                break;                
+            }
             default:
                 DisconnectClient(ctx->socket);
                 delete ctx;
@@ -813,20 +716,30 @@ namespace Web
         switch (operationType)
         {
         case Web::Operation::Accept:
+        {
             message = "Operation::Accept:";
             break;
+        }
         case Web::Operation::Handshake:
+        {
             message = "Operation::Handshake:";
             break;
+        }
         case Web::Operation::Receive:
+        {
             message = "Operation::Receive:";
             break;
+        }
         case Web::Operation::Send:
+        {
             message = "Operation::Send:";
             break;
+        }
         default:
+        {
             break;
         }
+        }/*
         std::cerr << message << " SSL_get_error return code: " << std::to_string(err) << std::endl;
         unsigned long e;
         while ((e = ERR_get_error()))
@@ -834,17 +747,17 @@ namespace Web
             char msg[256];
             ERR_error_string_n(e, msg, sizeof(msg));
             std::cerr << "OpenSSL Error: " << msg << "\n";
-        }
+        }*/
     }
-    void Server::HandleRequest(Web::HttpRequest& request, std::string& dataout)
+    void Server::HandleRequest(IOContext* ctx)
     {
-        if (request.IsFileRequest())
+        if (ctx->request->IsFileRequest())
         {
-            dataout = Web::StaticFileHandler::Serve(request.url);
+            ctx->data = Web::StaticFileHandler::Serve(ctx->request->url);
             return;
         }
 
-        Web::HttpResponse response = Web::Router::Instance().Handle(request);
-        dataout = response.ToString();
+        Web::HttpResponse response = Web::Router::Instance().Handle(*ctx->request);
+        ctx->data = response.ToString();
     }
 }

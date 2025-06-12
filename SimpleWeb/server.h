@@ -17,6 +17,7 @@
 namespace Web
 {
     constexpr size_t MAX_REQUEST_SIZE = 16 * 1024;
+    constexpr size_t MAX_RESPONSE_SIZE = 32 * 1024;
     // Operation enum
     enum class Operation { Accept, Handshake, Receive, Send };
 
@@ -37,10 +38,25 @@ namespace Web
         std::string data = "";
         size_t lastSentPlaintext = 0;
         size_t dataTransfered = 0;
-        Web::HttpRequest* request = nullptr;
+        std::unique_ptr<Web::HttpRequest> request = nullptr;
         bool HandshakeDone()
         {
             return SSL_is_init_finished(ssl) > 0;
+        }
+        bool Completed()
+        {
+            return !(request != nullptr && (request->body.size() < request->contentLength));
+        }
+        bool PrepareSSL(SSL_CTX* sslContext)
+        {
+            ssl = SSL_new(sslContext);
+            if (!ssl) return false;
+
+            rbio = BIO_new(BIO_s_mem());
+            wbio = BIO_new(BIO_s_mem());
+            SSL_set_bio(ssl, rbio, wbio);
+
+            return true;
         }
         IOContext() : operationType(Operation::Accept)
         {
@@ -51,33 +67,18 @@ namespace Web
 
         ~IOContext()
         {
-            CleanupSSL();
-            if (request != nullptr)
+            if (ssl != nullptr)
             {
-                delete request;
-                request = nullptr;
+                SSL_shutdown(ssl);
+                SSL_free(ssl);
+                ssl = nullptr;
             }
-        }
-
-        void CloseSocket()
-        {
-            if (socket != INVALID_SOCKET) {
+            if (socket != INVALID_SOCKET)
+            {
                 closesocket(socket);
                 socket = INVALID_SOCKET;
             }
-        }
-        void CleanupSSL()
-        {
-            if (ssl != nullptr)
-            {
-                SSL_free(ssl);
-                ssl = nullptr;
-            }   
-        }
-        void CleanupBIO()
-        {
-            if (rbio) BIO_free(rbio);
-            if (wbio) BIO_free(wbio);
+            request.reset();
         }
     };
 
@@ -132,12 +133,20 @@ namespace Web
         void WorkerThreadSsl();
         void LogSslError(Operation operationType, int err);
         bool PostAccept();
-        void PostReceive(IOContext* ctx);
-        bool PrepareHandshake(IOContext* ctx);
-        void SendPendingBIO(IOContext* ctx);
+        
+        bool StartReceive(IOContext* ctx);
+        void ProcessReceiveAsync(IOContext* ctx);
+
+        bool StartHandshake(IOContext* ctx);
+        void ProcessHandshakeAsync(IOContext* ctx);
+
+        bool StartSend(IOContext* ctx);
+        bool ProcessSendAsync(IOContext* ctx);
+
         void CleanupSocket(SOCKET s);
+        void CleanupContext(IOContext* ctx);
         void CleanupSslContext();
         void DisconnectClient(SOCKET s);
-        void HandleRequest(Web::HttpRequest& request, std::string& response);
+        void HandleRequest(IOContext* ctx);
     };
 }
