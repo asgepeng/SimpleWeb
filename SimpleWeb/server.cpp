@@ -289,7 +289,7 @@ namespace Web
 
         return true;
     }
-    bool Server::StartReceive(IOContext* ctx)
+    bool Server::PostReceive(IOContext* ctx)
     {
         ctx->operationType = Operation::Receive;
         ZeroMemory(&ctx->overlapped, sizeof(ctx->overlapped));
@@ -301,80 +301,14 @@ namespace Web
         int result = WSARecv(ctx->socket, &ctx->wsabuf, 1, NULL, &flags, &ctx->overlapped, NULL);
         return !(result == SOCKET_ERROR && WSAGetLastError() != WSA_IO_PENDING);
     }
-    void Server::ProcessReceiveAsync(IOContext* ctx)
+    bool Server::PostSend(IOContext* ctx)
     {
-
-    }
-
-    bool Server::StartHandshake(IOContext* ctx)
-    {
-        return false;
-    }
-    void Server::ProcessHandshakeAsync(IOContext* ctx)
-    {
-        int ret = SSL_do_handshake(ctx->ssl);
-        int err = SSL_get_error(ctx->ssl, ret);
-
-        if (ret == 1)
+        if (ctx->dataTransfered < ctx->sendBuffer.size())
         {
-            StartReceive(ctx); // lanjut ke baca data dari client
-            return;
-        }
-
-        if (err == SSL_ERROR_WANT_READ)
-        {
-            // Perlu kirim data ke client dari wbio
-            char tempBuf[8192];
-            int bytesToSend = BIO_read(ctx->wbio, tempBuf, sizeof(tempBuf));
-            if (bytesToSend > 0)
-            {
-                memcpy(ctx->buffer, tempBuf, bytesToSend);
-                ctx->wsabuf.buf = ctx->buffer;
-                ctx->wsabuf.len = bytesToSend;
-                ctx->operationType = Operation::Send;
-                ProcessSendAsync(ctx);
-            }
-            else
-            {
-                delete ctx;
-                ctx = nullptr;
-            }
-        }
-        else if (err == SSL_ERROR_WANT_WRITE)
-        {
-            // Biasanya tidak terjadi karena kita pakai BIO memory, tapi tetap ditangani
-            // Tidak usah kirim apa-apa dulu, mungkin akan dapat event IO lagi
-        }
-        else
-        {
-            ERR_print_errors_fp(stderr); // debug
-            delete ctx;
-            ctx = nullptr;
-        }
-    }
-
-    bool Server::StartSend(IOContext* ctx)
-    {
-        size_t toSend = min(ctx->data.size(), sizeof(ctx->buffer));
-
-        memcpy(ctx->buffer, ctx->data.c_str(), toSend);
-        ctx->wsabuf.buf = ctx->buffer;
-        ctx->wsabuf.len = static_cast<ULONG>(toSend);
-        ctx->operationType = Operation::Send;
-
-        ZeroMemory(&ctx->overlapped, sizeof(ctx->overlapped));
-        DWORD sentBytes = 0;
-        int res = WSASend(ctx->socket, &ctx->wsabuf, 1, &sentBytes, 0, &ctx->overlapped, NULL);
-        return !(res == SOCKET_ERROR && WSAGetLastError() != WSA_IO_PENDING);
-    }
-    bool Server::ProcessSendAsync(IOContext* ctx)
-    {
-        if (ctx->dataTransfered < ctx->data.size())
-        {
-            size_t remaining = ctx->data.size() - ctx->dataTransfered;
+            size_t remaining = ctx->sendBuffer.size() - ctx->dataTransfered;
             size_t toSend = min(remaining, sizeof(ctx->buffer));
 
-            memcpy(ctx->buffer, ctx->data.c_str() + ctx->dataTransfered, toSend);
+            memcpy(ctx->buffer, ctx->sendBuffer.c_str() + ctx->dataTransfered, toSend);
             ctx->wsabuf.buf = ctx->buffer;
             ctx->wsabuf.len = static_cast<ULONG>(toSend);
             ctx->operationType = Operation::Send;
@@ -386,19 +320,17 @@ namespace Web
         }
         return false;
     }
-
-    void Server::CleanupSocket(SOCKET s)
-    {
-        if (s != INVALID_SOCKET)
-        {
-            closesocket(s); // hanya tutup socket klien
-
-            std::lock_guard<std::mutex> lock(clientsMutex);
-            clients.erase(std::remove(clients.begin(), clients.end(), s), clients.end());
-        }
-    }
     void Server::CleanupContext(IOContext* ctx)
     {
+        if (ctx->socket != INVALID_SOCKET)
+        {
+            closesocket(ctx->socket);
+
+            std::lock_guard<std::mutex> lock(clientsMutex);
+            clients.erase(std::remove(clients.begin(), clients.end(), ctx->socket), clients.end());
+            ctx->socket = INVALID_SOCKET;
+        }
+
         if (ctx != nullptr)
         {
             delete ctx;
@@ -411,9 +343,6 @@ namespace Web
         {
             SSL_CTX_free(sslContext);
         }
-    }
-    void Server::DisconnectClient(SOCKET s) {
-        CleanupSocket(s);
     }
     void Server::WorkerThread()
     {
@@ -447,7 +376,7 @@ namespace Web
                     std::lock_guard<std::mutex> lock(clientsMutex);
                     clients.push_back(ctx->socket);
                 }
-                if (!StartReceive(ctx)) CleanupContext(ctx);
+                if (!PostReceive(ctx)) CleanupContext(ctx);
                 PostAccept();
                 break;
             }
@@ -458,41 +387,36 @@ namespace Web
                     CleanupContext(ctx);
                     break;
                 }
-                ctx->data.append(ctx->buffer, bytesTransferred);
+                ctx->receiveBuffer.append(ctx->buffer, bytesTransferred);
                 if (ctx->request == nullptr)
                 {
-                    size_t headerEnd = ctx->data.find("\r\n\r\n");
+                    size_t headerEnd = ctx->receiveBuffer.find("\r\n\r\n");
                     if (headerEnd != std::string::npos)
                     {
-                        std::string rawHeader = ctx->data.substr(0, headerEnd + 4);
-                        ctx->request = std::make_unique<Web::HttpRequest>(rawHeader);
-
-                        std::string remaining = ctx->data.substr(headerEnd + 4);
-                        ctx->request->body = remaining;
-
-                        ctx->data.clear();
+                        ctx->request = new Web::HttpRequest(ctx->receiveBuffer);
+                        ctx->receiveBuffer.clear();
                     }
                 }
                 else
                 {
-                    ctx->request->body.append(ctx->data);
-                    ctx->data.clear();
+                    ctx->request->body.append(ctx->receiveBuffer);
+                    ctx->receiveBuffer.clear();
                 }
 
-                if (ctx->request != nullptr && ctx->request->body.size() < ctx->request->contentLength)
+                if (!ctx->ReceiveComplete())
                 {
-                    if (!StartReceive(ctx)) CleanupContext(ctx);
+                    if (!PostReceive(ctx)) CleanupContext(ctx);
                     break;
                 }
 
                 HandleRequest(ctx);
-                if (!StartSend(ctx)) CleanupContext(ctx);
+                if (!PostSend(ctx)) CleanupContext(ctx);
                 break;
             }
             case Operation::Send:
             {
                 ctx->dataTransfered += bytesTransferred;
-                if (!ProcessSendAsync(ctx)) CleanupContext(ctx);
+                if (!PostSend(ctx)) CleanupContext(ctx);
                 break;
             }
             default:
@@ -529,6 +453,7 @@ namespace Web
                     std::lock_guard<std::mutex> lock(clientsMutex);
                     clients.push_back(ctx->socket);
                 }
+
                 if (!ctx->PrepareSSL(sslContext))
                 {
                     CleanupContext(ctx);
@@ -542,19 +467,18 @@ namespace Web
                     int sslErr = SSL_get_error(ctx->ssl, result);
                     if (sslErr == SSL_ERROR_WANT_READ || sslErr == SSL_ERROR_WANT_WRITE)
                     {
-                        //Kirim data TLS ke klien (dari wbio)
                         int pending = BIO_read(ctx->wbio, ctx->buffer, sizeof(ctx->buffer));
                         if (pending > 0)
                         {
-                            ctx->data = std::string(ctx->buffer, pending);
-                            if (!ProcessSendAsync(ctx))
+                            ctx->sendBuffer = std::string(ctx->buffer, pending);
+                            if (!PostSend(ctx))
                             {
                                 CleanupContext(ctx);
                                 PostAccept();
                             }
                             break;
                         }
-                        if (!StartReceive(ctx))
+                        if (!PostReceive(ctx))
                         {
                             CleanupContext(ctx);
                             PostAccept();
@@ -568,7 +492,7 @@ namespace Web
                     break;
                 }
 
-                if (!StartReceive(ctx))
+                if (!PostReceive(ctx))
                 {
                     CleanupContext(ctx);
                     PostAccept();
@@ -596,15 +520,15 @@ namespace Web
                             int pending = BIO_read(ctx->wbio, ctx->buffer, sizeof(ctx->buffer));
                             if (pending > 0)
                             {
-                                ctx->data = std::string(ctx->buffer, pending);
-                                if (!ProcessSendAsync(ctx))
+                                ctx->sendBuffer = std::string(ctx->buffer, pending);
+                                if (!PostSend(ctx))
                                 {
                                     CleanupContext(ctx);
                                     PostAccept();
                                 }
                                 break;
                             }
-                            if (!StartReceive(ctx))
+                            if (!PostReceive(ctx))
                             {
                                 CleanupContext(ctx);
                                 PostAccept();
@@ -622,11 +546,48 @@ namespace Web
                 int len = SSL_read(ctx->ssl, ctx->buffer, sizeof(ctx->buffer));
                 if (len > 0)
                 {
-                    std::string raw(ctx->buffer, len);
-                    ctx->request = std::make_unique<Web::HttpRequest>(raw);
-                    HandleRequest(ctx);
+                    if (ctx->request == nullptr)
+                    {
+                        ctx->receiveBuffer.append(std::string(ctx->buffer, len));
+                        size_t headerEnd = ctx->receiveBuffer.find("\r\n\r\n");
+                        if (headerEnd != std::string::npos)
+                        {
+                            ctx->request = new Web::HttpRequest(ctx->receiveBuffer);
+                            ctx->receiveBuffer.clear();
+                        }
+                        else
+                        {
+                            if (!PostReceive(ctx))
+                            {
+                                CleanupContext(ctx);
+                                PostAccept();
+                            }
+                            break;
+                        }
+                    }
+                    else
+                    {
+                        ctx->request->body.append(std::string(ctx->buffer, len));
+                    }         
 
-                    int written = SSL_write(ctx->ssl, ctx->data.data(), (int)ctx->data.size());
+                    if (!ctx->ReceiveComplete())
+                    {
+                        if (!PostReceive(ctx))
+                        {
+                            CleanupContext(ctx);
+                            PostAccept();
+                        }
+                        break;
+                    }                    
+         
+                    HandleRequest(ctx);
+                    if (ctx->request)
+                    {
+                        std::cout << ctx->request->method << std::endl;
+                        std::cout << ctx->request->url << std::endl;
+                    }
+
+                    int written = SSL_write(ctx->ssl, ctx->sendBuffer.data(), (int)ctx->sendBuffer.size());
                     if (written <= 0)
                     {
                         int sslErr = SSL_get_error(ctx->ssl, written);
@@ -638,8 +599,8 @@ namespace Web
                     int pending = BIO_read(ctx->wbio, ctx->buffer, sizeof(ctx->buffer));
                     if (pending > 0)
                     {
-                        ctx->data = std::string(ctx->buffer, pending);
-                        if (!ProcessSendAsync(ctx))
+                        ctx->sendBuffer = std::string(ctx->buffer, pending);
+                        if (!PostSend(ctx))
                         {
                             CleanupContext(ctx);
                             break;
@@ -655,15 +616,15 @@ namespace Web
                         int pending = BIO_read(ctx->wbio, ctx->buffer, sizeof(ctx->buffer));
                         if (pending > 0)
                         {
-                            ctx->data = std::string(ctx->buffer, pending);
-                            if (!ProcessSendAsync(ctx))
+                            ctx->sendBuffer = std::string(ctx->buffer, pending);
+                            if (!PostSend(ctx))
                             {
                                 CleanupContext(ctx);
                                 PostAccept();
                             }
                             break;
                         }
-                        if (!StartReceive(ctx))
+                        if (!PostReceive(ctx))
                         {
                             CleanupContext(ctx);
                             PostAccept();
@@ -676,7 +637,7 @@ namespace Web
                     PostAccept();
                     break;
                 }
-                if (!StartReceive(ctx))
+                if (!PostReceive(ctx))
                 {
                     CleanupContext(ctx);
                     PostAccept();
@@ -688,15 +649,15 @@ namespace Web
                 int pending = BIO_read(ctx->wbio, ctx->buffer, sizeof(ctx->buffer));
                 if (pending > 0)
                 {
-                    ctx->data = std::string(ctx->buffer, pending);
-                    if (!ProcessSendAsync(ctx))
+                    ctx->sendBuffer = std::string(ctx->buffer, pending);
+                    if (!PostSend(ctx))
                     {
                         CleanupContext(ctx);
                         PostAccept();
                     }
                     break;
                 }
-                if (!StartReceive(ctx))
+                if (!PostReceive(ctx))
                 {
                     CleanupContext(ctx);
                     PostAccept(); 
@@ -704,8 +665,7 @@ namespace Web
                 break;                
             }
             default:
-                DisconnectClient(ctx->socket);
-                delete ctx;
+                CleanupContext(ctx);
                 break;
             }
         }
@@ -753,11 +713,15 @@ namespace Web
     {
         if (ctx->request->IsFileRequest())
         {
-            ctx->data = Web::StaticFileHandler::Serve(ctx->request->url);
+            ctx->sendBuffer = Web::StaticFileHandler::Serve(ctx->request->url);
+            delete ctx->request;
+            ctx->request = nullptr;
             return;
         }
 
         Web::HttpResponse response = Web::Router::Instance().Handle(*ctx->request);
-        ctx->data = response.ToString();
+        delete ctx->request;
+        ctx->request = nullptr;
+        ctx->sendBuffer = response.ToString();
     }
 }

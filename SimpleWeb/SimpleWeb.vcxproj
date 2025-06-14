@@ -39,6 +39,7 @@
     <ClInclude Include="pages.h" />
     <ClInclude Include="product.h" />
     <ClInclude Include="request.h" />
+    <ClInclude Include="resource.h" />
     <ClInclude Include="response.h" />
     <ClInclude Include="routing.h" />
     <ClInclude Include="server.h" />
@@ -74,6 +75,12 @@
     <ClCompile Include="smtp.cpp" />
     <ClCompile Include="sqlhelper.cpp" />
     <ClCompile Include="staticfile.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="SimpleWeb.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="C:\Users\dell\Downloads\icon-bizmate.ico" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>17.0</VCProjectVersion>

@@ -14,6 +14,7 @@
 
 #pragma comment(lib, "ws2_32.lib")
 
+using namespace std::chrono;
 namespace Web
 {
     constexpr size_t MAX_REQUEST_SIZE = 16 * 1024;
@@ -32,18 +33,20 @@ namespace Web
         BIO* wbio = nullptr;
         Operation operationType;
         char buffer[8192]{};
+        steady_clock::time_point lastActive;
 
-        std::chrono::steady_clock::time_point lastActive;
+        std::string receiveBuffer = "";
+        std::string sendBuffer = "";
 
-        std::string data = "";
         size_t lastSentPlaintext = 0;
         size_t dataTransfered = 0;
-        std::unique_ptr<Web::HttpRequest> request = nullptr;
+
+        Web::HttpRequest* request = nullptr;
         bool HandshakeDone()
         {
             return SSL_is_init_finished(ssl) > 0;
         }
-        bool Completed()
+        bool ReceiveComplete()
         {
             return !(request != nullptr && (request->body.size() < request->contentLength));
         }
@@ -78,7 +81,11 @@ namespace Web
                 closesocket(socket);
                 socket = INVALID_SOCKET;
             }
-            request.reset();
+            if (request != nullptr)
+            {
+                delete request;
+                request = nullptr;
+            }
         }
     };
 
@@ -128,25 +135,19 @@ namespace Web
         LPFN_GETACCEPTEXSOCKADDRS lpfnGetAcceptExSockaddrs = nullptr;
 
         bool InitializeSsl();
+
         void Shutdown();
         void WorkerThread();
         void WorkerThreadSsl();
         void LogSslError(Operation operationType, int err);
+
         bool PostAccept();
-        
-        bool StartReceive(IOContext* ctx);
-        void ProcessReceiveAsync(IOContext* ctx);
+        bool PostReceive(IOContext* ctx);
+        bool PostSend(IOContext* ctx);
 
-        bool StartHandshake(IOContext* ctx);
-        void ProcessHandshakeAsync(IOContext* ctx);
-
-        bool StartSend(IOContext* ctx);
-        bool ProcessSendAsync(IOContext* ctx);
-
-        void CleanupSocket(SOCKET s);
         void CleanupContext(IOContext* ctx);
         void CleanupSslContext();
-        void DisconnectClient(SOCKET s);
+
         void HandleRequest(IOContext* ctx);
     };
 }

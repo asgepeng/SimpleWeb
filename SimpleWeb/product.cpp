@@ -103,7 +103,6 @@ HttpResponse ProductController::Edit(FormCollection& form)
     std::string description = form["desc"];
     int category = std::stoi(form["category"]);
 
-    std::cout << std::to_string(description.size()) << std::endl;
     std::string sql = R"(UPDATE products
 SET [name] = ?, 
     [description] = ?, 
