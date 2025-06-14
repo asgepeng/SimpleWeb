@@ -39,6 +39,7 @@
     <ClInclude Include="pages.h" />
     <ClInclude Include="product.h" />
     <ClInclude Include="request.h" />
+    <ClInclude Include="requesthandler.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="response.h" />
     <ClInclude Include="routing.h" />
@@ -46,6 +47,7 @@
     <ClInclude Include="service.h" />
     <ClInclude Include="smtp.h" />
     <ClInclude Include="sqlhelper.h" />
+    <ClInclude Include="sslcm.h" />
     <ClInclude Include="staticfile.h" />
   </ItemGroup>
   <ItemGroup>
@@ -68,12 +70,14 @@
     <ClCompile Include="pages.cpp" />
     <ClCompile Include="product.cpp" />
     <ClCompile Include="request.cpp" />
+    <ClCompile Include="requesthandler.cpp" />
     <ClCompile Include="response.cpp" />
     <ClCompile Include="routing.cpp" />
     <ClCompile Include="server.cpp" />
     <ClCompile Include="service.cpp" />
     <ClCompile Include="smtp.cpp" />
     <ClCompile Include="sqlhelper.cpp" />
+    <ClCompile Include="sslcm.cpp" />
     <ClCompile Include="staticfile.cpp" />
   </ItemGroup>
   <ItemGroup>

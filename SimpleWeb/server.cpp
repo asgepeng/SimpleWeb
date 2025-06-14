@@ -12,55 +12,74 @@
 
 namespace Web
 {
-    bool Server::InitializeSsl()
+
+    /* IOContext Implementation */
+    IOContext::IOContext() : operationType(Operation::Accept)
     {
-        SSL_library_init();
-        OpenSSL_add_all_algorithms();
-        SSL_load_error_strings();
-
-        std::string certPath = Configuration::Get("ssl_certificate");
-        std::string keyPath = Configuration::Get("ssl_key");
-
-        sslContext = SSL_CTX_new(TLS_server_method());
-        if (!sslContext)
+        wsabuf.buf = buffer;
+        wsabuf.len = sizeof(buffer);
+        lastActive = steady_clock::now();
+    }
+    IOContext::~IOContext()
+    {
+        if (ssl != nullptr)
         {
-            ERR_print_errors_fp(stderr);
-            CleanupSslContext();
-            return false;
+            SSL_shutdown(ssl);
+            SSL_free(ssl);
+            ssl = nullptr;
         }
 
-        if (SSL_CTX_use_certificate_file(sslContext, certPath.c_str(), SSL_FILETYPE_PEM) <= 0)
+        if (socket != INVALID_SOCKET)
         {
-            ERR_print_errors_fp(stderr);
-            CleanupSslContext();
-            return false;
+            closesocket(socket);
+            socket = INVALID_SOCKET;
         }
 
-        if (SSL_CTX_use_PrivateKey_file(sslContext, keyPath.c_str(), SSL_FILETYPE_PEM) <= 0)
+        if (request != nullptr)
         {
-            ERR_print_errors_fp(stderr);
-            CleanupSslContext();
-            return false;
+            delete request;
+            request = nullptr;
         }
-
-        if (!SSL_CTX_check_private_key(sslContext))
-        {
-            std::cerr << "Private key does not match the public certificate\n";
-            CleanupSslContext();
+    }
+    bool IOContext::HandshakeDone()
+    {
+        return SSL_is_init_finished(ssl) > 0;
+    }
+    bool IOContext::ReceiveComplete()
+    {
+        return !(request != nullptr && (request->body.size() < request->contentLength));
+    }
+    bool IOContext::PrepareSSL(SSL_CTX* sslContext)
+    {
+        ssl = SSL_new(sslContext);
+        if (!ssl)
             return false;
-        }
 
-        std::cout << "ssl successfully initialized" << std::endl;
+        rbio = BIO_new(BIO_s_mem());
+        wbio = BIO_new(BIO_s_mem());
+        SSL_set_bio(ssl, rbio, wbio);
+
         return true;
+    }
+
+    /* Server Implementation */
+    Server::Server() : hIOCP(NULL), listenerSocket(INVALID_SOCKET), running(false), sslManager(nullptr), useSSL(false) {}
+    Server::~Server()
+    {
+        Stop();
     }
     bool Server::Start()
     {
         if (useSSL)
         {
             port = 443;
-            if (!InitializeSsl())
+
+            std::string certPath = Configuration::Get("ssl_certificate");
+            std::string keyPath = Configuration::Get("ssl_key");
+
+            if(!sslManager.Initialize(certPath, keyPath))
             {
-                CleanupSslContext();
+                sslManager.Cleanup();
                 return false;
             }
         }
@@ -73,14 +92,14 @@ namespace Web
         int res = WSAStartup(MAKEWORD(2, 2), &wsaData);
         if (res != 0)
         {
-            CleanupSslContext();
+            sslManager.Cleanup();
             return false;
         }
 
         listenerSocket = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, NULL, 0, WSA_FLAG_OVERLAPPED);
         if (listenerSocket == INVALID_SOCKET)
         {
-            CleanupSslContext();
+            sslManager.Cleanup();
             WSACleanup();
             return false;
         }
@@ -93,7 +112,7 @@ namespace Web
         if (bind(listenerSocket, (sockaddr*)&addr, sizeof(addr)) == SOCKET_ERROR)
         {
             closesocket(listenerSocket);
-            CleanupSslContext();
+            sslManager.Cleanup();
             WSACleanup();
             return false;
         }
@@ -101,7 +120,7 @@ namespace Web
         if (listen(listenerSocket, SOMAXCONN) == SOCKET_ERROR)
         {
             closesocket(listenerSocket);
-            CleanupSslContext();
+            sslManager.Cleanup();
             WSACleanup();
             return false;
         }
@@ -111,7 +130,7 @@ namespace Web
         if (!hIOCP)
         {
             closesocket(listenerSocket);
-            CleanupSslContext();
+            sslManager.Cleanup();
             WSACleanup();
             return false;
         }
@@ -156,7 +175,7 @@ namespace Web
         int threadCount = (int)sysinfo.dwNumberOfProcessors;
         for (int i = 0; i < threadCount; i++)
         {
-            if (useSSL) workerThreads.emplace_back(&Server::WorkerThreadSsl, this);
+            if (useSSL) workerThreads.emplace_back(&Server::SslWorkerThread, this);
             else workerThreads.emplace_back(&Server::WorkerThread, this);
         }
 
@@ -174,7 +193,9 @@ namespace Web
     void Server::Stop()
     {
         if (!running) return;
+
         running = false;
+        handler.Shutdown();
         if (listenerSocket != INVALID_SOCKET)
         {
             closesocket(listenerSocket);
@@ -206,7 +227,7 @@ namespace Web
             CloseHandle(hIOCP);
             hIOCP = nullptr;
         }
-        CleanupSslContext();
+        sslManager.Cleanup();
         WSACleanup();
     }
     void Server::MapControllers(Web::RouteConfig* config)
@@ -303,22 +324,21 @@ namespace Web
     }
     bool Server::PostSend(IOContext* ctx)
     {
-        if (ctx->dataTransfered < ctx->sendBuffer.size())
-        {
-            size_t remaining = ctx->sendBuffer.size() - ctx->dataTransfered;
-            size_t toSend = min(remaining, sizeof(ctx->buffer));
+        if (!ctx->ssl && ctx->dataTransfered >= ctx->sendBuffer.size()) return false;
 
-            memcpy(ctx->buffer, ctx->sendBuffer.c_str() + ctx->dataTransfered, toSend);
-            ctx->wsabuf.buf = ctx->buffer;
-            ctx->wsabuf.len = static_cast<ULONG>(toSend);
-            ctx->operationType = Operation::Send;
+        size_t remaining = ctx->sendBuffer.size() - ctx->dataTransfered;
+        size_t toSend = min(remaining, sizeof(ctx->buffer));
 
-            ZeroMemory(&ctx->overlapped, sizeof(ctx->overlapped));
-            DWORD sentBytes = 0;
-            int res = WSASend(ctx->socket, &ctx->wsabuf, 1, &sentBytes, 0, &ctx->overlapped, NULL);
-            return !(res == SOCKET_ERROR && WSAGetLastError() != WSA_IO_PENDING);
-        }
-        return false;
+        memcpy(ctx->buffer, ctx->sendBuffer.c_str() + ctx->dataTransfered, toSend);
+        ctx->wsabuf.buf = ctx->buffer;
+        ctx->wsabuf.len = static_cast<ULONG>(toSend);
+        ctx->operationType = Operation::Send;
+        if (!ctx->ssl) ctx->dataTransfered += toSend;
+
+        ZeroMemory(&ctx->overlapped, sizeof(ctx->overlapped));
+        DWORD sentBytes = 0;
+        int res = WSASend(ctx->socket, &ctx->wsabuf, 1, &sentBytes, 0, &ctx->overlapped, NULL);
+        return !(res == SOCKET_ERROR && WSAGetLastError() != WSA_IO_PENDING);
     }
     void Server::CleanupContext(IOContext* ctx)
     {
@@ -335,13 +355,6 @@ namespace Web
         {
             delete ctx;
             ctx = nullptr;
-        }
-    }
-    void Server::CleanupSslContext()
-    {
-        if (sslContext != nullptr)
-        {
-            SSL_CTX_free(sslContext);
         }
     }
     void Server::WorkerThread()
@@ -403,19 +416,23 @@ namespace Web
                     ctx->receiveBuffer.clear();
                 }
 
-                if (!ctx->ReceiveComplete())
+                if (ctx->ReceiveComplete())
+                {
+                    handler.Enqueue([this, ctx]() {
+                        HandleRequest(ctx);
+                        ctx->operationType = Operation::Send;
+                        PostQueuedCompletionStatus(hIOCP, 0, (ULONG_PTR)this, (LPOVERLAPPED)ctx);
+                        });
+                }
+                else
                 {
                     if (!PostReceive(ctx)) CleanupContext(ctx);
-                    break;
-                }
-
-                HandleRequest(ctx);
-                if (!PostSend(ctx)) CleanupContext(ctx);
+                }   
                 break;
+
             }
             case Operation::Send:
             {
-                ctx->dataTransfered += bytesTransferred;
                 if (!PostSend(ctx)) CleanupContext(ctx);
                 break;
             }
@@ -425,7 +442,7 @@ namespace Web
             }
         }
     }
-    void Server::WorkerThreadSsl()
+    void Server::SslWorkerThread()
     {
         DWORD bytesTransferred;
         ULONG_PTR completionKey;
@@ -454,7 +471,7 @@ namespace Web
                     clients.push_back(ctx->socket);
                 }
 
-                if (!ctx->PrepareSSL(sslContext))
+                if (!ctx->PrepareSSL(sslManager.GetContext()))
                 {
                     CleanupContext(ctx);
                     PostAccept();
@@ -509,7 +526,7 @@ namespace Web
                     break;
                 }
 
-                if (!ctx->HandshakeDone())
+                if (!ctx->HandshakeDone()) // return SSL_is_init_finished(ssl)
                 {
                     int result = SSL_accept(ctx->ssl);
                     if (result <= 0)
@@ -568,9 +585,26 @@ namespace Web
                     else
                     {
                         ctx->request->body.append(std::string(ctx->buffer, len));
-                    }         
+                    }
 
-                    if (!ctx->ReceiveComplete())
+                    if (ctx->ReceiveComplete())
+                    {
+                        handler.Enqueue([this, ctx]() {
+                            HandleRequest(ctx);
+                            ctx->operationType = Operation::Send;
+                            int written = SSL_write(ctx->ssl, ctx->sendBuffer.data(), (int)ctx->sendBuffer.size());
+                            if (written <= 0)
+                            {
+                                int sslErr = SSL_get_error(ctx->ssl, written);
+                                LogSslError(ctx->operationType, sslErr);
+                                CleanupContext(ctx);
+                                return;
+                            }
+                            PostQueuedCompletionStatus(hIOCP, 0, (ULONG_PTR)this, (LPOVERLAPPED)ctx);
+                            });
+                        break;
+                    }
+                    else
                     {
                         if (!PostReceive(ctx))
                         {
@@ -578,34 +612,12 @@ namespace Web
                             PostAccept();
                         }
                         break;
-                    }                    
-         
-                    HandleRequest(ctx);
-                    if (ctx->request)
-                    {
-                        std::cout << ctx->request->method << std::endl;
-                        std::cout << ctx->request->url << std::endl;
                     }
-
-                    int written = SSL_write(ctx->ssl, ctx->sendBuffer.data(), (int)ctx->sendBuffer.size());
-                    if (written <= 0)
-                    {
-                        int sslErr = SSL_get_error(ctx->ssl, written);
-                        LogSslError(ctx->operationType, sslErr);
-                        CleanupContext(ctx);
-                        return;
-                    }
-
-                    int pending = BIO_read(ctx->wbio, ctx->buffer, sizeof(ctx->buffer));
-                    if (pending > 0)
-                    {
-                        ctx->sendBuffer = std::string(ctx->buffer, pending);
-                        if (!PostSend(ctx))
-                        {
-                            CleanupContext(ctx);
-                            break;
-                        }
-                    }
+                }
+                else if (len == 0)
+                {
+                    CleanupContext(ctx);
+                    PostAccept();
                     break;
                 }
                 else
@@ -631,7 +643,6 @@ namespace Web
                         }
                         break;
                     }
-
                     // SSL_read error fatal
                     CleanupContext(ctx);
                     PostAccept();
@@ -657,12 +668,13 @@ namespace Web
                     }
                     break;
                 }
+
                 if (!PostReceive(ctx))
                 {
                     CleanupContext(ctx);
-                    PostAccept(); 
+                    PostAccept();
                 }
-                break;                
+                break;
             }
             default:
                 CleanupContext(ctx);
@@ -678,11 +690,6 @@ namespace Web
         case Web::Operation::Accept:
         {
             message = "Operation::Accept:";
-            break;
-        }
-        case Web::Operation::Handshake:
-        {
-            message = "Operation::Handshake:";
             break;
         }
         case Web::Operation::Receive:

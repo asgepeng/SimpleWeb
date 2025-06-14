@@ -9,11 +9,12 @@ int main()
     Data::DbInitializer::Initialize();
     LayoutManager::Load();
     Configuration::LoadFromFile("config.ini");
+    bool useSSL = Configuration::GetBool("UseSSL", false);
 
     Web::Server server;
     ControllerRoutes routeConfig;
 
-    server.UseSSL(true);
+    server.UseSSL(useSSL);
     server.MapControllers(&routeConfig);
 
     if (!server.Start())
