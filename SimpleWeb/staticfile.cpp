@@ -1,4 +1,6 @@
+#include "appconfig.h"
 #include "staticfile.h"
+
 #include <iostream>
 #include <fstream>
 #include <filesystem>
@@ -7,14 +9,13 @@ namespace Web
 {
     std::string StaticFileHandler::ConvertToPathWindows(const std::string& url)
     {
-        std::string localPath = "E:\\PointOfSale\\SimpleWeb\\x64\\Release\\wwwroot" + url;
+        std::string localPath = Configuration::Get("StaticFolder") + url;
         for (auto& ch : localPath)
         {
             if (ch == '/') ch = '\\';
         }
         return localPath;
     }
-
     std::string StaticFileHandler::GetContentType(const std::string& path)
     {
         static const std::unordered_map<std::string, std::string> mimeTypes =
@@ -37,7 +38,6 @@ namespace Web
         }
         return "application/octet-stream";
     }
-
     bool StaticFileHandler::TryHandleRequest(const HttpRequest& request, SOCKET clientSocket)
     {
         if (!IsFileRequest(request.url)) return false;

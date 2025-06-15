@@ -1,44 +1,44 @@
 #include "sslcm.h"
 
-Web::SslManager::SslManager(SSL_CTX* context)
+Web::SslContextManager::SslContextManager(SSL_CTX* context)
 {
-    sslContext = context;
+    defaultContext = context;
 }
 
-Web::SslManager::~SslManager()
+Web::SslContextManager::~SslContextManager()
 {
-	if (sslContext != nullptr)
+	if (defaultContext != nullptr)
 	{
-		SSL_CTX_free(sslContext);
+		SSL_CTX_free(defaultContext);
 	}
 }
 
-bool Web::SslManager::Initialize(std::string& certPath, std::string& keyPath)
+bool Web::SslContextManager::Initialize(std::string& certPath, std::string& keyPath)
 {
     SSL_library_init();
     OpenSSL_add_all_algorithms();
     SSL_load_error_strings();
 
-    sslContext = SSL_CTX_new(TLS_server_method());
-    if (!sslContext)
+    defaultContext = SSL_CTX_new(TLS_server_method());
+    if (!defaultContext)
     {
         ERR_print_errors_fp(stderr);
         return false;
     }
 
-    if (SSL_CTX_use_certificate_file(sslContext, certPath.c_str(), SSL_FILETYPE_PEM) <= 0)
+    if (SSL_CTX_use_certificate_file(defaultContext, certPath.c_str(), SSL_FILETYPE_PEM) <= 0)
     {
         ERR_print_errors_fp(stderr);
         return false;
     }
 
-    if (SSL_CTX_use_PrivateKey_file(sslContext, keyPath.c_str(), SSL_FILETYPE_PEM) <= 0)
+    if (SSL_CTX_use_PrivateKey_file(defaultContext, keyPath.c_str(), SSL_FILETYPE_PEM) <= 0)
     {
         ERR_print_errors_fp(stderr);
         return false;
     }
 
-    if (!SSL_CTX_check_private_key(sslContext))
+    if (!SSL_CTX_check_private_key(defaultContext))
     {
         std::cerr << "Private key does not match the public certificate\n";
         return false;
@@ -46,15 +46,19 @@ bool Web::SslManager::Initialize(std::string& certPath, std::string& keyPath)
     return true;
 }
 
-void Web::SslManager::Cleanup()
+void Web::SslContextManager::Cleanup()
 {
-    if (sslContext != nullptr)
+    if (defaultContext != nullptr)
     {
-        SSL_CTX_free(sslContext);
+        SSL_CTX_free(defaultContext);
     }
+    for (auto& kv : sniContexts) {
+        SSL_CTX_free(kv.second);
+    }
+    sniContexts.clear();
 }
 
-SSL_CTX* Web::SslManager::GetContext()
+SSL_CTX* Web::SslContextManager::GetDefaultContext()
 {
-	return sslContext;
+	return defaultContext;
 }

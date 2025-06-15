@@ -18,12 +18,8 @@
 using namespace std::chrono;
 namespace Web
 {
-    constexpr size_t MAX_REQUEST_SIZE = 16 * 1024;
-    constexpr size_t MAX_RESPONSE_SIZE = 32 * 1024;
-    // Operation enum
     enum class Operation { Accept, Receive, Send, SendReady };
 
-    // Context struct for each I/O operation
     struct IOContext
     {
         OVERLAPPED overlapped = {};
@@ -65,6 +61,7 @@ namespace Web
         bool UseSSL() { return useSSL; }
         void Port(USHORT value) { if (!running) useSSL = value; }
         USHORT Port() { return port; }
+        bool routeInitialized = false;
     private:
         bool useSSL = false;
         USHORT port = 0;
@@ -72,7 +69,7 @@ namespace Web
         HANDLE hIOCP;
 
         SOCKET listenerSocket;
-        SslManager sslManager;
+        SslContextManager sslManager;
         std::vector<std::thread> workerThreads;
         std::atomic<bool> running;
         std::mutex clientsMutex;

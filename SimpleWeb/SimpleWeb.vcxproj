@@ -21,6 +21,9 @@
   <ItemGroup>
     <ClInclude Include="action.h" />
     <ClInclude Include="appconfig.h" />
+    <ClInclude Include="bufpool.h" />
+    <ClInclude Include="bufspan.h" />
+    <ClInclude Include="conn.h" />
     <ClInclude Include="controllers.h" />
     <ClInclude Include="crypto.h" />
     <ClInclude Include="db.h" />
@@ -48,11 +51,15 @@
     <ClInclude Include="smtp.h" />
     <ClInclude Include="sqlhelper.h" />
     <ClInclude Include="sslcm.h" />
+    <ClInclude Include="sslconn.h" />
     <ClInclude Include="staticfile.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="action.cpp" />
     <ClCompile Include="appconfig.cpp" />
+    <ClCompile Include="bufpool.cpp" />
+    <ClCompile Include="bufspan.cpp" />
+    <ClCompile Include="conn.cpp" />
     <ClCompile Include="crypto.cpp" />
     <ClCompile Include="db.cpp" />
     <ClCompile Include="dbconnpool.cpp" />
@@ -78,6 +85,7 @@
     <ClCompile Include="smtp.cpp" />
     <ClCompile Include="sqlhelper.cpp" />
     <ClCompile Include="sslcm.cpp" />
+    <ClCompile Include="sslconn.cpp" />
     <ClCompile Include="staticfile.cpp" />
   </ItemGroup>
   <ItemGroup>

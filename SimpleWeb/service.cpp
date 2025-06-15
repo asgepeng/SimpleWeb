@@ -1,6 +1,10 @@
 #pragma once
 #include "initiator.h"
 #include "service.h"
+#include "layoutmanager.h"
+#include "appconfig.h"
+#include "dbinitializer.h"
+
 #include <strsafe.h>
 #include <string>
 
@@ -11,7 +15,7 @@ WindowsService::WindowsService(const wchar_t* serviceName)
 
 WindowsService::~WindowsService()
 {
-    if (g_Server) delete g_Server;
+    if (server) delete server;
 }
 
 bool WindowsService::Run() 
@@ -110,12 +114,16 @@ DWORD WINAPI WindowsService::ServiceWorkerThread(LPVOID lpParam)
 
 void WindowsService::StartServer() 
 {
-    g_Server = new Web::Server();
-
+    LayoutManager::Load();
+    Configuration::LoadFromFile("config.ini");
+    bool useSSL = Configuration::GetBool("UseSSL", false);
     Web::ControllerRoutes routes;
-    g_Server->MapControllers(&routes);
 
-    if (!g_Server->Start()) 
+    server = new Web::Server();
+    server->UseSSL(useSSL);
+    server->MapControllers(&routes);
+
+    if (!server->Start()) 
     {
         SetEvent(g_ServiceStopEvent);
     }
@@ -123,8 +131,8 @@ void WindowsService::StartServer()
 
 void WindowsService::StopServer() 
 {
-    if (g_Server) 
+    if (server) 
     {
-        g_Server->Stop();
+        server->Stop();
     }
 }

@@ -108,6 +108,18 @@
     <ClInclude Include="sslcm.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="bufpool.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="bufspan.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="sslconn.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="conn.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="appconfig.cpp">
@@ -192,6 +204,18 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="sslcm.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="bufpool.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="bufspan.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="sslconn.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="conn.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

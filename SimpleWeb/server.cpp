@@ -232,6 +232,8 @@ namespace Web
     }
     void Server::MapControllers(Web::RouteConfig* config)
     {
+        if (routeInitialized) return;
+
         config->RegisterEndPoints(&Web::Router::Instance());
     }
     void Server::Shutdown()
@@ -471,7 +473,7 @@ namespace Web
                     clients.push_back(ctx->socket);
                 }
 
-                if (!ctx->PrepareSSL(sslManager.GetContext()))
+                if (!ctx->PrepareSSL(sslManager.GetDefaultContext()))
                 {
                     CleanupContext(ctx);
                     PostAccept();

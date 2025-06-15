@@ -10,6 +10,9 @@ namespace Web
 
         void SetHeader(const std::string& name, const std::string& value);
         void SetCookie(const std::string& name, const std::string& value, const std::chrono::system_clock::time_point& expired);
+        void SetCookie(const std::string& name, const std::string& value,
+            const std::chrono::system_clock::time_point& expired,
+            bool httpOnly, bool secure, const std::string& sameSite);
         void Redirect(const std::string& url);
         void Write(const std::string& content);
         std::string ToString() const;
