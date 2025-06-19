@@ -59,7 +59,7 @@ namespace Web
 
         void UseSSL(bool value) { if (!running) useSSL = value; }
         bool UseSSL() { return useSSL; }
-        void Port(USHORT value) { if (!running) useSSL = value; }
+        void Port(USHORT value) { if (!running && !useSSL) port = value; }
         USHORT Port() { return port; }
         bool routeInitialized = false;
     private:
@@ -84,6 +84,7 @@ namespace Web
         void SslWorkerThread();
         void LogSslError(Operation operationType, int err);
 
+        bool ProcessHandshake(IOContext* ctx, int& result);
         bool PostAccept();
         bool PostReceive(IOContext* ctx);
         bool PostSend(IOContext* ctx);

@@ -271,7 +271,36 @@ namespace Web
 
         // Note: Tidak cleanup SSL dan Winsock agar bisa di-reinit
     }
+    bool Server::ProcessHandshake(IOContext* ctx, int& result)
+    {
+        result = SSL_accept(ctx->ssl);
+        if (result <= 0)
+        {
+            int sslErr = SSL_get_error(ctx->ssl, result);
+            if (sslErr == SSL_ERROR_WANT_READ || sslErr == SSL_ERROR_WANT_WRITE)
+            {
+                int pending = BIO_read(ctx->wbio, ctx->buffer, sizeof(ctx->buffer));
+                if (pending > 0)
+                {
+                    ctx->sendBuffer = std::string(ctx->buffer, pending);
+                    if (!PostSend(ctx))
+                    {
+                        return false;
+                    }
+                    return true;
+                }
+                if (!PostReceive(ctx))
+                {
+                    return false;
+                }
+                return true;
+            }
 
+            LogSslError(ctx->operationType, sslErr);
+            return false;
+        }
+        return true;
+    }
     bool Server::PostAccept()
     {
         SOCKET acceptSocket = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, NULL, 0, WSA_FLAG_OVERLAPPED);
@@ -480,37 +509,14 @@ namespace Web
                     break;
                 }
 
-                int result = SSL_accept(ctx->ssl);
-                if (result <= 0)
+                int result;
+                if (!ProcessHandshake(ctx, result))
                 {
-                    int sslErr = SSL_get_error(ctx->ssl, result);
-                    if (sslErr == SSL_ERROR_WANT_READ || sslErr == SSL_ERROR_WANT_WRITE)
-                    {
-                        int pending = BIO_read(ctx->wbio, ctx->buffer, sizeof(ctx->buffer));
-                        if (pending > 0)
-                        {
-                            ctx->sendBuffer = std::string(ctx->buffer, pending);
-                            if (!PostSend(ctx))
-                            {
-                                CleanupContext(ctx);
-                                PostAccept();
-                            }
-                            break;
-                        }
-                        if (!PostReceive(ctx))
-                        {
-                            CleanupContext(ctx);
-                            PostAccept();
-                        }
-
-                        break;
-                    }
-                    LogSslError(ctx->operationType, sslErr);
                     CleanupContext(ctx);
                     PostAccept();
                     break;
                 }
-
+                if (result <= 0) break;
                 if (!PostReceive(ctx))
                 {
                     CleanupContext(ctx);
@@ -530,36 +536,14 @@ namespace Web
 
                 if (!ctx->HandshakeDone()) // return SSL_is_init_finished(ssl)
                 {
-                    int result = SSL_accept(ctx->ssl);
-                    if (result <= 0)
+                    int result;
+                    if (!ProcessHandshake(ctx, result))
                     {
-                        int sslErr = SSL_get_error(ctx->ssl, result);
-                        if (sslErr == SSL_ERROR_WANT_READ || sslErr == SSL_ERROR_WANT_WRITE)
-                        {
-                            int pending = BIO_read(ctx->wbio, ctx->buffer, sizeof(ctx->buffer));
-                            if (pending > 0)
-                            {
-                                ctx->sendBuffer = std::string(ctx->buffer, pending);
-                                if (!PostSend(ctx))
-                                {
-                                    CleanupContext(ctx);
-                                    PostAccept();
-                                }
-                                break;
-                            }
-                            if (!PostReceive(ctx))
-                            {
-                                CleanupContext(ctx);
-                                PostAccept();
-                            }
-                            break;
-                        }
-
-                        LogSslError(ctx->operationType, sslErr);
                         CleanupContext(ctx);
                         PostAccept();
                         break;
                     }
+                    if (result <= 0) break;
                 }
 
                 int len = SSL_read(ctx->ssl, ctx->buffer, sizeof(ctx->buffer));
